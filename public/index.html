@@ -35,6 +35,14 @@
   .row > *{flex:1;min-width:120px;}
   .hint{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.4;}
   .hidden{display:none!important;}
+  #loadCard.drag{border:2px dashed var(--teal);background:#eef9fb;}
+  .savedlbl{display:block;font-size:12px;color:var(--muted);font-weight:600;margin:14px 0 6px;}
+  .saved{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px;}
+  .saved-meta{flex:1;min-width:0;}
+  .saved-name{font-weight:600;font-size:14px;color:var(--navy);word-break:break-word;}
+  .saved-sub{font-size:12px;color:var(--muted);}
+  .saved .btn{padding:8px 14px;font-size:13px;}
+  .btn-x{border:none;background:#f3f5f7;color:var(--muted);width:32px;height:32px;border-radius:8px;font-size:17px;cursor:pointer;flex:0 0 32px;}
 
   /* progress */
   .progress-wrap{display:flex;align-items:center;gap:12px;margin-top:4px;}
@@ -93,8 +101,12 @@
       <button class="btn primary" id="uploadListBtn">Upload list (Excel / CSV / PDF)</button>
     </div>
     <input type="file" id="listFile" accept=".xlsx,.xls,.csv,.pdf" class="hidden" />
-    <div class="hint">Upload your consolidation list and it builds the pick checklist automatically.</div>
+    <div class="hint">Upload your consolidation list — or <b>drag &amp; drop</b> the file anywhere on this card — and it builds the pick checklist automatically.</div>
     <div id="loadBanner"></div>
+    <div id="savedWrap">
+      <span class="savedlbl">Saved lists (shared across all devices)</span>
+      <div id="savedLists"></div>
+    </div>
   </div>
 
   <!-- PICK SHEET -->
@@ -103,7 +115,7 @@
     <div class="row" style="margin-bottom:12px;">
       <div style="flex:1;">
         <label>Consolidation / Customer</label>
-        <input type="text" id="consolName" placeholder="e.g. Rubins – June consol" />
+        <input type="text" id="consolName" placeholder="Auto-filled from the list — customer & BL#" />
       </div>
       <div style="flex:1;">
         <label>Picked by</label>
@@ -146,9 +158,64 @@
 
 <div class="toast" id="toast"></div>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <script>
 const state = { items: [], photos: [], slackConfigured: false };
 const $ = (id) => document.getElementById(id);
+
+/* ---------- shared saved lists (Firebase) ---------- */
+const firebaseConfig = {
+  apiKey: "AIzaSyDiO807-kcn8rDle195PYxkApJQOvUjBB0",
+  authDomain: "sports-center-sorter.firebaseapp.com",
+  databaseURL: "https://sports-center-sorter-default-rtdb.firebaseio.com",
+  projectId: "sports-center-sorter",
+  storageBucket: "sports-center-sorter.firebasestorage.app",
+  messagingSenderId: "983235004483",
+  appId: "1:983235004483:web:849c4e1afaf7ac78ae6cf6"
+};
+let listDB = null;
+try { firebase.initializeApp(firebaseConfig); listDB = firebase.database(); } catch(e) { listDB = null; }
+
+function listNameFrom(items, fallback){
+  const cust=(items.find(it=>it.customer&&String(it.customer).trim())||{}).customer||"";
+  const bls=[...new Set(items.map(it=>it.wr).filter(Boolean))];
+  let nm=String(cust||"").trim();
+  if(bls.length) nm += (nm?" — ":"") + "BL " + bls.join(", ");
+  return nm || fallback || "Consolidation";
+}
+function saveListToCloud(name, items){
+  if(!listDB) return;
+  try{ listDB.ref("picklists").push({ name:name||"Consolidation", items, createdAt:Date.now() }); }catch(e){}
+}
+function timeAgo(ts){ if(!ts) return ""; const s=(Date.now()-ts)/1000;
+  if(s<60) return "just now"; if(s<3600) return Math.floor(s/60)+"m ago";
+  if(s<86400) return Math.floor(s/3600)+"h ago"; return Math.floor(s/86400)+"d ago"; }
+function subscribeLists(){
+  if(!listDB){ const w=$("savedWrap"); if(w) w.style.display="none"; return; }
+  listDB.ref("picklists").on("value", snap=>{
+    const v=snap.val()||{};
+    const arr=Object.keys(v).map(k=>({id:k,...v[k]})).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+    renderSavedLists(arr);
+  });
+}
+function renderSavedLists(arr){
+  const box=$("savedLists");
+  if(!arr.length){ box.innerHTML='<div class="hint">No saved lists yet. Upload one on any device and it shows up here for everyone.</div>'; return; }
+  box.innerHTML=arr.map(l=>
+    '<div class="saved"><div class="saved-meta"><div class="saved-name">'+escapeHtml(l.name||"Consolidation")+
+    '</div><div class="saved-sub">'+((l.items&&l.items.length)||0)+' line(s) · '+timeAgo(l.createdAt)+
+    '</div></div><button class="btn ghost" data-load="'+l.id+'">Load</button>'+
+    '<button class="btn-x" data-del="'+l.id+'" title="Delete">×</button></div>'
+  ).join("");
+  box.querySelectorAll("[data-load]").forEach(b=>b.addEventListener("click",()=>{
+    const l=arr.find(x=>x.id===b.getAttribute("data-load"));
+    if(l){ loadItems(l.items||[]); if(l.name) $("consolName").value=l.name; toast("Loaded "+(l.name||"list")); window.scrollTo({top:0,behavior:"smooth"}); }
+  }));
+  box.querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click",()=>{
+    if(confirm("Delete this saved list for everyone?")) listDB.ref("picklists/"+b.getAttribute("data-del")).remove();
+  }));
+}
 
 const SAMPLE = [
   { wr:"WR-10231", description:"Coffee – Eight O'Clock cartons", expectedQty:16, location:"A-12" },
@@ -180,6 +247,12 @@ function loadItems(rawItems){
   $("pickCard").classList.remove("hidden");
   $("photoCard").classList.remove("hidden");
   $("postBar").classList.remove("hidden");
+  // auto-fill Consolidation / Customer with the customer name + BL#(s) from the list
+  const cust=(rawItems.find(it=>it.customer&&String(it.customer).trim())||{}).customer||"";
+  const bls=[...new Set(rawItems.map(it=>it.wr).filter(Boolean))];
+  let label=String(cust||"").trim();
+  if(bls.length) label += (label?" — ":"") + "BL " + bls.join(", ");
+  if(label) $("consolName").value = label;
   renderList();
   updateProgress();
 }
@@ -376,9 +449,8 @@ function escapeHtml(s){ return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<"
 function banner(id,msg,kind){ $(id).innerHTML='<div class="banner '+(kind||"warn")+'">'+msg+'</div>'; }
 
 /* ---------- wire up ---------- */
-$("uploadListBtn").addEventListener("click",()=>$("listFile").click());
-$("listFile").addEventListener("change",async (e)=>{
-  const f=e.target.files[0]; if(!f) return;
+async function handleListFile(f){
+  if(!f) return;
   banner("loadBanner","Reading "+f.name+"…","warn");
   const fd=new FormData(); fd.append("file",f);
   try{
@@ -387,12 +459,20 @@ $("listFile").addEventListener("change",async (e)=>{
     if(!r.ok||data.error) throw new Error(data.error||"parse failed");
     if(!data.items.length) throw new Error("No rows found — check the file");
     loadItems(data.items);
-    banner("loadBanner","Loaded "+data.items.length+" line(s) from "+f.name,"warn");
+    saveListToCloud(listNameFrom(data.items, f.name), data.items);
+    banner("loadBanner","Loaded "+data.items.length+" line(s) from "+f.name+" — saved to all devices.","warn");
   }catch(err){
     banner("loadBanner","Could not read that file: "+err.message+". (Upload parsing needs the deployed app.)","warn");
   }
-  e.target.value="";
-});
+}
+$("uploadListBtn").addEventListener("click",()=>$("listFile").click());
+$("listFile").addEventListener("change",e=>{ handleListFile(e.target.files[0]); e.target.value=""; });
+(function(){
+  const drop=$("loadCard");
+  ["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{ e.preventDefault(); if(e.dataTransfer) e.dataTransfer.dropEffect="copy"; drop.classList.add("drag"); }));
+  drop.addEventListener("dragleave",e=>{ if(!drop.contains(e.relatedTarget)) drop.classList.remove("drag"); });
+  drop.addEventListener("drop",e=>{ e.preventDefault(); drop.classList.remove("drag"); const f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0]; if(f) handleListFile(f); });
+})();
 $("takeBtn").addEventListener("click",()=>$("cameraInput").click());
 $("uploadPhotoBtn").addEventListener("click",()=>$("galleryInput").click());
 $("cameraInput").addEventListener("change",e=>{ addPhotoFiles(e.target.files); e.target.value=""; });
@@ -400,6 +480,7 @@ $("galleryInput").addEventListener("change",e=>{ addPhotoFiles(e.target.files); 
 $("postBtn").addEventListener("click",post);
 
 loadChannels();
+subscribeLists();
 </script>
 </body>
 </html>
