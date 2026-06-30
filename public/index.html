@@ -115,7 +115,7 @@
     <div class="row" style="margin-bottom:12px;">
       <div style="flex:1;">
         <label>Consolidation / Customer</label>
-        <input type="text" id="consolName" placeholder="Auto-filled from the list — customer & BL#" />
+        <input type="text" id="consolName" placeholder="Customer (auto-filled from the list)" />
       </div>
       <div style="flex:1;">
         <label>Picked by</label>
@@ -179,10 +179,8 @@ try { firebase.initializeApp(firebaseConfig); listDB = firebase.database(); } ca
 
 function listNameFrom(items, fallback){
   const cust=(items.find(it=>it.customer&&String(it.customer).trim())||{}).customer||"";
-  const bls=[...new Set(items.map(it=>it.wr).filter(Boolean))];
-  let nm=String(cust||"").trim();
-  if(bls.length) nm += (nm?" — ":"") + "BL " + bls.join(", ");
-  return nm || fallback || "Consolidation";
+  const fname=fallback? String(fallback).replace(/\.[^.]+$/,"").trim() : "";
+  return String(cust||"").trim() || fname || "Consolidation";
 }
 function saveListToCloud(name, items){
   if(!listDB) return;
@@ -247,12 +245,9 @@ function loadItems(rawItems){
   $("pickCard").classList.remove("hidden");
   $("photoCard").classList.remove("hidden");
   $("postBar").classList.remove("hidden");
-  // auto-fill Consolidation / Customer with the customer name + BL#(s) from the list
+  // auto-fill Consolidation / Customer with the customer name from the list
   const cust=(rawItems.find(it=>it.customer&&String(it.customer).trim())||{}).customer||"";
-  const bls=[...new Set(rawItems.map(it=>it.wr).filter(Boolean))];
-  let label=String(cust||"").trim();
-  if(bls.length) label += (label?" — ":"") + "BL " + bls.join(", ");
-  if(label) $("consolName").value = label;
+  if(cust) $("consolName").value = String(cust).trim();
   renderList();
   updateProgress();
 }
@@ -459,6 +454,7 @@ async function handleListFile(f){
     if(!r.ok||data.error) throw new Error(data.error||"parse failed");
     if(!data.items.length) throw new Error("No rows found — check the file");
     loadItems(data.items);
+    if(!$("consolName").value.trim()) $("consolName").value = listNameFrom(data.items, f.name);
     saveListToCloud(listNameFrom(data.items, f.name), data.items);
     banner("loadBanner","Loaded "+data.items.length+" line(s) from "+f.name+" — saved to all devices.","warn");
   }catch(err){

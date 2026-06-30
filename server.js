@@ -84,7 +84,7 @@ app.get("/api/channels", async (req, res) => {
 function classifyHeader(h) {
   const k = String(h || "").toLowerCase().replace(/[^a-z0-9]/g, "");
   if (!k) return null;
-  if (/(wr|warehouserec|receipt|whr|billoflading|bol|ref)/.test(k) || k === "bl") return "wr";
+  if (/(wr|warehouserec|receipt|whr|ref)/.test(k)) return "wr";
   if (/(desc|item|product|commodity|goods|cargo|style)/.test(k)) return "description";
   if (/(qty|quant|pieces|pcs|cartons|ctns|cases|boxes|units|count)/.test(k)) return "expectedQty";
   if (/(loc|bin|slot|position|aisle|rack|spot)/.test(k)) return "location";
