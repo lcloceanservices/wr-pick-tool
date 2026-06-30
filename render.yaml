@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: wr-pick-tool
+    runtime: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: SLACK_BOT_TOKEN
+        sync: false
+      - key: NODE_VERSION
+        value: 20.11.1
