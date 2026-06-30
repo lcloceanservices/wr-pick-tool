@@ -89,6 +89,8 @@ function classifyHeader(h) {
   if (/(qty|quant|pieces|pcs|cartons|ctns|cases|boxes|units|count)/.test(k)) return "expectedQty";
   if (/(loc|bin|slot|position|aisle|rack|spot)/.test(k)) return "location";
   if (/(customer|consignee|client|account)/.test(k)) return "customer";
+  if (/weight|wgt/.test(k) || k === "kg" || k === "kgs" || k === "lbs" || k === "grosskg" || k === "grosskgs") return "weight";
+  if (/dimension|measurement|cbm|cuft|volume/.test(k) || k === "dim" || k === "dims" || k === "size" || k === "cube") return "dims";
   return null;
 }
 
@@ -125,13 +127,15 @@ function rowsToItems(rows) {
     const row = rows[i];
     if (!row || row.every((c) => c === "" || c === null || c === undefined)) continue;
 
-    let wr, description, expectedQty, location, customer;
+    let wr, description, expectedQty, location, customer, weight, dims;
     if (recognized) {
       wr = colMap.wr !== undefined ? row[colMap.wr] : "";
       description = colMap.description !== undefined ? row[colMap.description] : "";
       expectedQty = colMap.expectedQty !== undefined ? row[colMap.expectedQty] : "";
       location = colMap.location !== undefined ? row[colMap.location] : "";
       customer = colMap.customer !== undefined ? row[colMap.customer] : "";
+      weight = colMap.weight !== undefined ? row[colMap.weight] : "";
+      dims = colMap.dims !== undefined ? row[colMap.dims] : "";
     } else {
       [wr, description, expectedQty, location] = row;
     }
@@ -143,6 +147,8 @@ function rowsToItems(rows) {
       expectedQty: Number.isFinite(cleanQty) ? cleanQty : "",
       location: String(location || "").trim(),
       customer: String(customer || "").trim(),
+      weight: String(weight || "").trim(),
+      dims: String(dims || "").trim(),
     });
   }
 

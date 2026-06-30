@@ -61,6 +61,10 @@
   .pick .desc{font-weight:600;font-size:15px;word-break:break-word;}
   .pick .sub{font-size:12px;color:var(--muted);margin-top:2px;}
   .pick .wrtag{display:inline-block;background:var(--navy);color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:6px;margin-right:6px;}
+  .pick .wrbig{font-weight:800;font-size:19px;color:var(--navy);letter-spacing:.3px;line-height:1.2;margin-bottom:2px;}
+  .pickctl{display:flex;gap:8px;margin:0 0 12px;flex-wrap:wrap;}
+  .pickctl input,.pickctl select{font-size:15px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--text);}
+  .pickctl input{flex:2;min-width:150px;} .pickctl select{flex:1;min-width:140px;}
   .fields{display:flex;gap:8px;margin-top:10px;}
   .fields .f{flex:1;}
   .fields label{margin-bottom:2px;}
@@ -114,8 +118,12 @@
     <h2>2 &middot; Pick the freight</h2>
     <div class="row" style="margin-bottom:12px;">
       <div style="flex:1;">
-        <label>Consolidation / Customer</label>
+        <label>Customer</label>
         <input type="text" id="consolName" placeholder="Customer (auto-filled from the list)" />
+      </div>
+      <div style="flex:1;">
+        <label>BL #</label>
+        <input type="text" id="blNum" placeholder="Bill of Lading #" />
       </div>
       <div style="flex:1;">
         <label>Picked by</label>
@@ -126,7 +134,15 @@
       <div class="bar"><span id="barFill"></span></div>
       <div class="progress-num" id="progNum">0 / 0</div>
     </div>
-    <div id="list" style="margin-top:14px;"></div>
+    <div class="pickctl" style="margin-top:14px;">
+      <input type="text" id="pickSearch" placeholder="Search WR #, item, or location…" autocomplete="off" />
+      <select id="sortSel">
+        <option value="">List order</option>
+        <option value="asc">WR # ↑ (low to high)</option>
+        <option value="desc">WR # ↓ (high to low)</option>
+      </select>
+    </div>
+    <div id="list"></div>
   </div>
 
   <!-- PHOTOS -->
@@ -161,7 +177,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <script>
-const state = { items: [], photos: [], slackConfigured: false };
+const state = { items: [], photos: [], slackConfigured: false, search: "", sortDir: "" };
 const $ = (id) => document.getElementById(id);
 
 /* ---------- shared saved lists (Firebase) ---------- */
@@ -239,6 +255,8 @@ function loadItems(rawItems){
     description: it.description|| (it.wr? "":"(no description)"),
     expectedQty: it.expectedQty===""||it.expectedQty==null? "" : Number(it.expectedQty),
     location: it.location||"",
+    weight: it.weight||"",
+    dims: it.dims||"",
     actualQty: it.expectedQty===""||it.expectedQty==null? "" : Number(it.expectedQty),
     picked:false,
   }));
@@ -252,11 +270,23 @@ function loadItems(rawItems){
   updateProgress();
 }
 
+/* ---------- filtered + sorted view of the checklist ---------- */
+function getVisibleItems(){
+  const q=(state.search||"").toLowerCase().trim();
+  let arr=state.items.slice();
+  if(q) arr=arr.filter(it=>((it.wr||"")+" "+(it.description||"")+" "+(it.location||"")).toLowerCase().includes(q));
+  if(state.sortDir==="asc"||state.sortDir==="desc"){
+    const dir=state.sortDir==="desc"?-1:1;
+    arr.sort((a,b)=>String(a.wr||"").localeCompare(String(b.wr||""),undefined,{numeric:true,sensitivity:"base"})*dir);
+  }
+  return arr;
+}
+
 /* ---------- render checklist ONCE, then update in place ---------- */
 function renderList(){
   const wrap=$("list");
   wrap.innerHTML="";
-  state.items.forEach((it)=>{
+  getVisibleItems().forEach((it)=>{
     const el=document.createElement("div");
     el.className="pick";
     el.id="row_"+it.id;
@@ -264,8 +294,13 @@ function renderList(){
       <div class="top">
         <div class="check" data-pick="${it.id}">${it.picked?"✓":""}</div>
         <div class="meta">
-          <div class="desc">${it.wr?`<span class="wrtag">${escapeHtml(it.wr)}</span>`:""}${escapeHtml(it.description)}</div>
-          <div class="sub">${it.location?("Location on list: "+escapeHtml(it.location)):"No location on list"}</div>
+          ${it.wr?`<div class="wrbig">${escapeHtml(it.wr)}</div>`:""}
+          <div class="desc">${escapeHtml(it.description)}</div>
+          <div class="sub">${[
+            it.location?("Loc: "+escapeHtml(it.location)):"",
+            it.weight?("Wt: "+escapeHtml(it.weight)):"",
+            it.dims?("Dims: "+escapeHtml(it.dims)):""
+          ].filter(Boolean).join(" · ") || "No location on list"}</div>
         </div>
       </div>
       <div class="fields">
@@ -354,13 +389,14 @@ function renderThumbs(){
 /* ---------- build slack message ---------- */
 function buildMessage(){
   const consol=$("consolName").value.trim();
+  const bl=$("blNum").value.trim();
   const picker=$("pickerName").value.trim();
   const total=state.items.length;
   const done=state.items.filter(x=>x.picked);
-  const wrs=[...new Set(state.items.map(x=>x.wr).filter(Boolean))];
 
-  let msg = "📦 *Freight Pick* — "+(consol||"Consolidation")+"\n";
-  if(wrs.length) msg += "*WR#:* "+wrs.join(", ")+"\n";
+  let head = consol || "Consolidation";
+  if(bl) head += " — BL "+bl;
+  let msg = "📦 *Freight Pick* — "+head+"\n";
   msg += "*Picked:* "+done.length+" of "+total+" lines\n";
 
   const lines = state.items.map(it=>{
@@ -430,7 +466,8 @@ function showRestart(){
 function resetAll(){
   state.items=[]; state.photos=[];
   $("list").innerHTML=""; $("thumbs").innerHTML="";
-  $("consolName").value=""; $("pickerName").value="";
+  $("consolName").value=""; $("blNum").value=""; $("pickerName").value="";
+  state.search=""; state.sortDir=""; if($("pickSearch")) $("pickSearch").value=""; if($("sortSel")) $("sortSel").value="";
   $("photoCount").textContent="No photos yet — tap a button to add as many as you need.";
   $("pickCard").classList.add("hidden"); $("photoCard").classList.add("hidden");
   $("postBar").classList.add("hidden");
@@ -462,6 +499,8 @@ async function handleListFile(f){
   }
 }
 $("uploadListBtn").addEventListener("click",()=>$("listFile").click());
+$("pickSearch").addEventListener("input",e=>{ state.search=e.target.value; renderList(); });
+$("sortSel").addEventListener("change",e=>{ state.sortDir=e.target.value; renderList(); });
 $("listFile").addEventListener("change",e=>{ handleListFile(e.target.files[0]); e.target.value=""; });
 (function(){
   const drop=$("loadCard");
