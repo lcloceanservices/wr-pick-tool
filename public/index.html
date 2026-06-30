@@ -91,10 +91,9 @@
     <h2>1 &middot; Load the consolidation list</h2>
     <div class="row">
       <button class="btn primary" id="uploadListBtn">Upload list (Excel / CSV / PDF)</button>
-      <button class="btn ghost" id="sampleBtn">Load sample list</button>
     </div>
     <input type="file" id="listFile" accept=".xlsx,.xls,.csv,.pdf" class="hidden" />
-    <div class="hint">Upload your consolidation list and it builds the pick checklist automatically. No list handy? Load the sample to try the flow.</div>
+    <div class="hint">Upload your consolidation list and it builds the pick checklist automatically.</div>
     <div id="loadBanner"></div>
   </div>
 
@@ -377,7 +376,6 @@ function escapeHtml(s){ return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<"
 function banner(id,msg,kind){ $(id).innerHTML='<div class="banner '+(kind||"warn")+'">'+msg+'</div>'; }
 
 /* ---------- wire up ---------- */
-$("sampleBtn").addEventListener("click",()=>{ loadItems(SAMPLE); $("consolName").value="Sample consolidation"; toast("Sample list loaded"); });
 $("uploadListBtn").addEventListener("click",()=>$("listFile").click());
 $("listFile").addEventListener("change",async (e)=>{
   const f=e.target.files[0]; if(!f) return;
