@@ -56,6 +56,9 @@
   .pick.short{background:#fff8ec;border-color:#f0d9a8;}
   .pick .top{display:flex;align-items:flex-start;gap:10px;}
   .pick .check{width:26px;height:26px;flex:0 0 26px;border-radius:7px;border:2px solid var(--line);background:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:16px;color:#fff;margin-top:2px;}
+  .pick .check.lock{background:var(--muted);border-color:var(--muted);cursor:not-allowed;}
+  .pick .claimlbl{font-size:12px;font-weight:700;margin-top:6px;color:var(--coral);}
+  .pick .claimlbl.mine{color:var(--green);}
   .pick.done .check{background:var(--green);border-color:var(--green);}
   .pick .meta{flex:1;min-width:0;}
   .pick .desc{font-weight:600;font-size:15px;word-break:break-word;}
@@ -177,7 +180,8 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <script>
-const state = { items: [], photos: [], slackConfigured: false, search: "", sortDir: "" };
+const state = { items: [], photos: [], slackConfigured: false, search: "", sortDir: "", listId: null, unsub: null, editing: null, deviceId: "" };
+state.deviceId = (function(){ try{ let d=localStorage.getItem("wrpick_device"); if(!d){ d="dev-"+Math.random().toString(36).slice(2)+Date.now().toString(36); localStorage.setItem("wrpick_device", d);} return d; }catch(e){ return "dev-"+Date.now(); } })();
 const $ = (id) => document.getElementById(id);
 
 /* ---------- shared saved lists (Firebase) ---------- */
@@ -199,8 +203,12 @@ function listNameFrom(items, fallback){
   return String(cust||"").trim() || fname || "Consolidation";
 }
 function saveListToCloud(name, items){
-  if(!listDB) return;
-  try{ listDB.ref("picklists").push({ name:name||"Consolidation", items, createdAt:Date.now() }); }catch(e){}
+  if(!listDB) return null;
+  try{
+    const withSid=items.map((it,i)=>Object.assign({sid:i}, it));
+    const ref=listDB.ref("picklists").push({ name:name||"Consolidation", items:withSid, createdAt:Date.now() });
+    return ref.key;
+  }catch(e){ return null; }
 }
 function timeAgo(ts){ if(!ts) return ""; const s=(Date.now()-ts)/1000;
   if(s<60) return "just now"; if(s<3600) return Math.floor(s/60)+"m ago";
@@ -224,7 +232,7 @@ function renderSavedLists(arr){
   ).join("");
   box.querySelectorAll("[data-load]").forEach(b=>b.addEventListener("click",()=>{
     const l=arr.find(x=>x.id===b.getAttribute("data-load"));
-    if(l){ loadItems(l.items||[]); if(l.name) $("consolName").value=l.name; toast("Loaded "+(l.name||"list")); window.scrollTo({top:0,behavior:"smooth"}); }
+    if(l){ openList(l.id, l); toast("Loaded "+(l.name||"list")); window.scrollTo({top:0,behavior:"smooth"}); }
   }));
   box.querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click",()=>{
     if(confirm("Delete this saved list for everyone?")) listDB.ref("picklists/"+b.getAttribute("data-del")).remove();
@@ -248,26 +256,77 @@ function toast(msg){
 }
 
 /* ---------- load items ---------- */
-function loadItems(rawItems){
-  state.items = rawItems.map((it,i)=>({
-    id:"it"+i+"_"+Date.now(),
+function numOrBlank(v){ return (v===""||v==null)? "" : Number(v); }
+
+/* Open a list into the pick sheet. listId != null => live shared (multi-user). */
+function openList(listId, listObj){
+  if(state.unsub){ try{state.unsub();}catch(e){} state.unsub=null; }
+  state.listId = listId || null;
+  state.editing = null;
+  const raw = (listObj && listObj.items) || [];
+  state.items = raw.map((it,i)=>({
+    sid: (it.sid!=null? it.sid : i),
     wr: it.wr||"",
     description: it.description|| (it.wr? "":"(no description)"),
-    expectedQty: it.expectedQty===""||it.expectedQty==null? "" : Number(it.expectedQty),
-    location: it.location||"",
-    weight: it.weight||"",
-    dims: it.dims||"",
-    actualQty: it.expectedQty===""||it.expectedQty==null? "" : Number(it.expectedQty),
-    picked:false,
+    expectedQty: numOrBlank(it.expectedQty),
+    location: it.location||"", weight: it.weight||"", dims: it.dims||"",
+    actualQty: numOrBlank(it.expectedQty),
+    picked:false, by:"", byId:"",
   }));
   $("pickCard").classList.remove("hidden");
   $("photoCard").classList.remove("hidden");
   $("postBar").classList.remove("hidden");
-  // auto-fill Consolidation / Customer with the customer name from the list
-  const cust=(rawItems.find(it=>it.customer&&String(it.customer).trim())||{}).customer||"";
-  if(cust) $("consolName").value = String(cust).trim();
-  renderList();
-  updateProgress();
+  if(listObj && listObj.name){ $("consolName").value = listObj.name; }
+  else { const cust=(raw.find(it=>it.customer&&String(it.customer).trim())||{}).customer||""; if(cust) $("consolName").value=String(cust).trim(); }
+  renderList(); updateProgress();
+  if(listDB && state.listId){
+    const ref=listDB.ref("pickstate/"+state.listId);
+    const cb=ref.on("value", snap=>applyRemote(snap.val()||{}));
+    state.unsub=()=>{ try{ref.off("value",cb);}catch(e){} };
+  }
+}
+/* offline / no-Firebase fallback */
+function loadItems(rawItems){ openList(null, { items: rawItems||[] }); }
+
+/* write one item's pick state to the shared room */
+function writeProgress(it){
+  if(!listDB || !state.listId) return;
+  const ref=listDB.ref("pickstate/"+state.listId+"/"+it.sid);
+  if(it.picked){ ref.set({ picked:true, by:it.by||"", byId:it.byId||state.deviceId, qty:(it.actualQty===""?null:it.actualQty), loc:it.location||"", at:Date.now() }); }
+  else { ref.remove(); }
+}
+/* merge the shared room's pick state coming from other pickers */
+function applyRemote(prog){
+  prog=prog||{};
+  state.items.forEach(it=>{
+    const p=prog[it.sid];
+    const picked=!!(p&&p.picked);
+    it.picked=picked;
+    it.by=picked?(p.by||""):""; it.byId=picked?(p.byId||""):"";
+    if(picked && String(it.sid)!==String(state.editing)){
+      if(p.qty!==undefined && p.qty!==null) it.actualQty=p.qty;
+      if(p.loc!==undefined) it.location=p.loc;
+    }
+  });
+  refreshRows(); updateProgress();
+}
+/* update existing rows in place (keeps input focus during live updates) */
+function refreshRows(){
+  const myId=state.deviceId;
+  state.items.forEach(it=>{
+    const row=$("row_"+it.sid); if(!row) return;
+    const other = it.picked && it.byId && it.byId!==myId;
+    const chk=row.querySelector(".check");
+    if(chk){ chk.textContent=it.picked?"\u2713":""; chk.classList.toggle("lock", !!other); }
+    const q=row.querySelector("[data-qty]"), l=row.querySelector("[data-loc]");
+    if(q){ q.disabled=!!other; if(document.activeElement!==q) q.value=it.actualQty; }
+    if(l){ l.disabled=!!other; if(document.activeElement!==l) l.value=it.location; }
+    let lbl=row.querySelector(".claimlbl");
+    const text = other ? ("\uD83D\uDD12 Picked by "+(it.by||"another picker")) : (it.picked? ("\u2713 Picked"+(it.by?(" by "+it.by):"")) : "");
+    if(text){ if(!lbl){ lbl=document.createElement("div"); lbl.className="claimlbl"; row.querySelector(".meta").appendChild(lbl); } lbl.className="claimlbl"+(other?"":" mine"); lbl.textContent=text; }
+    else if(lbl){ lbl.remove(); }
+    updateRowState(it);
+  });
 }
 
 /* ---------- filtered + sorted view of the checklist ---------- */
@@ -286,13 +345,15 @@ function getVisibleItems(){
 function renderList(){
   const wrap=$("list");
   wrap.innerHTML="";
+  const myId=state.deviceId;
   getVisibleItems().forEach((it)=>{
+    const other = it.picked && it.byId && it.byId!==myId;
     const el=document.createElement("div");
     el.className="pick";
-    el.id="row_"+it.id;
+    el.id="row_"+it.sid;
     el.innerHTML=`
       <div class="top">
-        <div class="check" data-pick="${it.id}">${it.picked?"✓":""}</div>
+        <div class="check${other?' lock':''}" data-pick="${it.sid}">${it.picked?"\u2713":""}</div>
         <div class="meta">
           ${it.wr?`<div class="wrbig">${escapeHtml(it.wr)}</div>`:""}
           <div class="desc">${escapeHtml(it.description)}</div>
@@ -305,48 +366,54 @@ function renderList(){
       </div>
       <div class="fields">
         <div class="f"><label>Picked qty${it.expectedQty!==""?(" / "+it.expectedQty):""}</label>
-          <input type="number" inputmode="numeric" data-qty="${it.id}" value="${it.actualQty}" /></div>
+          <input type="number" inputmode="numeric" data-qty="${it.sid}" value="${it.actualQty}" ${other?"disabled":""} /></div>
         <div class="f"><label>Location</label>
-          <input type="text" data-loc="${it.id}" value="${escapeHtml(it.location)}" placeholder="bin / spot" /></div>
+          <input type="text" data-loc="${it.sid}" value="${escapeHtml(it.location)}" placeholder="bin / spot" ${other?"disabled":""} /></div>
       </div>
       <div class="flag hidden"></div>`;
     wrap.appendChild(el);
   });
 
-  // listeners (attached once)
   wrap.querySelectorAll("[data-pick]").forEach(c=>{
     c.addEventListener("click",()=>togglePick(c.getAttribute("data-pick")));
   });
   wrap.querySelectorAll("[data-qty]").forEach(inp=>{
+    inp.addEventListener("focus",()=>{ state.editing=inp.getAttribute("data-qty"); });
+    inp.addEventListener("blur",()=>{ if(String(state.editing)===String(inp.getAttribute("data-qty"))) state.editing=null; });
     inp.addEventListener("input",()=>{
       const it=getItem(inp.getAttribute("data-qty"));
       it.actualQty = inp.value===""? "" : Number(inp.value);
-      updateRowState(it);
-      updateProgress();
+      updateRowState(it); updateProgress();
+      if(it.picked) writeProgress(it);
     });
   });
   wrap.querySelectorAll("[data-loc]").forEach(inp=>{
-    inp.addEventListener("input",()=>{ getItem(inp.getAttribute("data-loc")).location=inp.value; });
+    inp.addEventListener("focus",()=>{ state.editing=inp.getAttribute("data-loc"); });
+    inp.addEventListener("blur",()=>{ if(String(state.editing)===String(inp.getAttribute("data-loc"))) state.editing=null; });
+    inp.addEventListener("input",()=>{
+      const it=getItem(inp.getAttribute("data-loc"));
+      it.location=inp.value;
+      if(it.picked) writeProgress(it);
+    });
   });
 
-  // Re-apply picked / short-pick styling so sorting or searching never visually
-  // "unchecks" a row — the checkmark, green highlight and flags follow the saved state.
-  getVisibleItems().forEach(it=>updateRowState(it));
+  refreshRows();
 }
 
-function getItem(id){ return state.items.find(x=>x.id===id); }
+function getItem(sid){ return state.items.find(x=>String(x.sid)===String(sid)); }
 
-function togglePick(id){
-  const it=getItem(id);
+function togglePick(sid){
+  const it=getItem(sid); if(!it) return;
+  if(it.picked && it.byId && it.byId!==state.deviceId){ toast("Already picked by "+(it.by||"another picker")); return; }
   it.picked=!it.picked;
-  const row=$("row_"+id);
-  row.querySelector(".check").textContent = it.picked? "✓":"";
-  updateRowState(it);
-  updateProgress();
+  if(it.picked){ it.by=($("pickerName").value.trim()||"A picker"); it.byId=state.deviceId; }
+  else { it.by=""; it.byId=""; }
+  writeProgress(it);
+  refreshRows(); updateProgress();
 }
 
 function updateRowState(it){
-  const row=$("row_"+it.id);
+  const row=$("row_"+it.sid);
   if(!row) return;
   const short = it.picked && it.expectedQty!=="" && it.actualQty!=="" && Number(it.actualQty)<Number(it.expectedQty);
   row.classList.toggle("done", it.picked && !short);
@@ -468,6 +535,8 @@ function showRestart(){
 }
 
 function resetAll(){
+  if(state.unsub){ try{state.unsub();}catch(e){} state.unsub=null; }
+  state.listId=null; state.editing=null;
   state.items=[]; state.photos=[];
   $("list").innerHTML=""; $("thumbs").innerHTML="";
   $("consolName").value=""; $("blNum").value=""; $("pickerName").value="";
@@ -494,10 +563,12 @@ async function handleListFile(f){
     const data=await r.json();
     if(!r.ok||data.error) throw new Error(data.error||"parse failed");
     if(!data.items.length) throw new Error("No rows found — check the file");
-    loadItems(data.items);
-    if(!$("consolName").value.trim()) $("consolName").value = listNameFrom(data.items, f.name);
-    saveListToCloud(listNameFrom(data.items, f.name), data.items);
-    banner("loadBanner","Loaded "+data.items.length+" line(s) from "+f.name+" — saved to all devices.","warn");
+    const nm=listNameFrom(data.items, f.name);
+    const key=saveListToCloud(nm, data.items);
+    if(key){ openList(key, { name:nm, items:data.items }); }
+    else { loadItems(data.items); }
+    if(!$("consolName").value.trim()) $("consolName").value = nm;
+    banner("loadBanner","Loaded "+data.items.length+" line(s) from "+f.name+" — saved & shared live to all devices.","warn");
   }catch(err){
     banner("loadBanner","Could not read that file: "+err.message+". (Upload parsing needs the deployed app.)","warn");
   }
