@@ -48,6 +48,11 @@
   .seg button.on{background:#fff;color:var(--navy);box-shadow:0 1px 3px rgba(0,0,0,.08);}
   .grp{margin-bottom:14px;}
   .grphdr{font-family:'Montserrat',sans-serif;font-weight:700;font-size:12px;color:var(--navy);text-transform:uppercase;letter-spacing:.5px;margin:8px 0 6px;}
+  .grphdr.toggle{cursor:pointer;display:flex;align-items:center;gap:8px;background:#eef4f6;border:1px solid var(--line);border-radius:10px;padding:11px 12px;text-transform:none;letter-spacing:0;font-size:14px;}
+  .grphdr.toggle .chev{font-size:11px;color:var(--teal-dark);transition:transform .15s;}
+  .grphdr.toggle.collapsed .chev{transform:rotate(-90deg);}
+  .grphdr .gcount{margin-left:auto;font-family:'Inter',sans-serif;font-weight:600;font-size:11px;color:var(--muted);}
+  .gbody.collapsed{display:none;}
   .cbadge{font-size:11px;font-weight:700;color:var(--green);background:#e3f2ef;padding:2px 7px;border-radius:6px;margin-left:6px;}
   .completed-badge{font-size:13px;font-weight:700;color:var(--green);}
 
@@ -204,8 +209,9 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <script>
-const state = { items: [], photos: [], slackConfigured: false, search: "", sortDir: "", listId: null, unsub: null, editing: null, deviceId: "", mode: "solo", container: "", completed: false };
+const state = { items: [], photos: [], slackConfigured: false, search: "", sortDir: "", listId: null, unsub: null, editing: null, deviceId: "", mode: "solo", container: "", completed: false, collapsed: {} };
 state.deviceId = (function(){ try{ let d=localStorage.getItem("wrpick_device"); if(!d){ d="dev-"+Math.random().toString(36).slice(2)+Date.now().toString(36); localStorage.setItem("wrpick_device", d);} return d; }catch(e){ return "dev-"+Date.now(); } })();
+try{ state.collapsed = JSON.parse(localStorage.getItem("wrpick_collapsed")||"{}")||{}; }catch(e){ state.collapsed={}; }
 const $ = (id) => document.getElementById(id);
 
 /* ---------- shared saved lists (Firebase) ---------- */
@@ -254,19 +260,33 @@ function savedRow(l){
     '</div></div><button class="btn ghost" data-load="'+l.id+'">Load</button>'+
     '<button class="btn-x" data-del="'+l.id+'" title="Delete">×</button></div>';
 }
+let lastSavedArr=[];
 function renderSavedLists(arr){
+  lastSavedArr = arr || [];
   const box=$("savedLists");
-  if(!arr.length){ box.innerHTML='<div class="hint">No saved lists yet. Upload one on any device and it shows up here for everyone.</div>'; return; }
+  const lbl=document.querySelector(".savedlbl");
+  if(lbl) lbl.textContent = "Saved lists (shared across all devices)";
+  if(!(arr||[]).length){ box.innerHTML='<div class="hint">No saved lists yet. Upload one on any device and it shows up here for everyone.</div>'; return; }
   const groups={}, solo=[];
-  arr.forEach(l=>{ if(l.container){ (groups[l.container]=groups[l.container]||[]).push(l); } else solo.push(l); });
+  (arr||[]).forEach(l=>{ if(l.container){ (groups[l.container]=groups[l.container]||[]).push(l); } else solo.push(l); });
   let html="";
+  // Container groups first (collapsible), then individual lists — both always shown, kept separate.
   Object.keys(groups).sort().forEach(cont=>{
-    html+='<div class="grp"><div class="grphdr">\uD83D\uDEA2 Container '+escapeHtml(cont)+'</div>'+groups[cont].map(savedRow).join("")+'</div>';
+    const g=groups[cont]; const doneN=g.filter(x=>x.completed).length; const col=!!state.collapsed[cont];
+    html+='<div class="grp"><div class="grphdr toggle'+(col?' collapsed':'')+'" data-grp="'+escapeHtml(cont)+'">'
+      +'<span class="chev">\u25BE</span>\uD83D\uDEA2 Container '+escapeHtml(cont)
+      +'<span class="gcount">'+g.length+' list'+(g.length!==1?'s':'')+(doneN?(' · '+doneN+' done'):'')+'</span></div>'
+      +'<div class="gbody'+(col?' collapsed':'')+'">'+g.map(savedRow).join("")+'</div></div>';
   });
-  if(solo.length){ html+='<div class="grp">'+(Object.keys(groups).length?'<div class="grphdr">Individual consolidations</div>':'')+solo.map(savedRow).join("")+'</div>'; }
+  if(solo.length){ html+='<div class="grp"><div class="grphdr">'+(Object.keys(groups).length?'Individual consolidations':'Consolidation lists')+'</div>'+solo.map(savedRow).join("")+'</div>'; }
   box.innerHTML=html;
+  box.querySelectorAll(".grphdr.toggle").forEach(h=>h.addEventListener("click",()=>{
+    const c=h.getAttribute("data-grp"); state.collapsed[c]=!state.collapsed[c];
+    try{ localStorage.setItem("wrpick_collapsed", JSON.stringify(state.collapsed)); }catch(e){}
+    renderSavedLists(lastSavedArr);
+  }));
   box.querySelectorAll("[data-load]").forEach(b=>b.addEventListener("click",()=>{
-    const l=arr.find(x=>x.id===b.getAttribute("data-load"));
+    const l=lastSavedArr.find(x=>x.id===b.getAttribute("data-load"));
     if(l){ openList(l.id, l); toast("Loaded "+(l.name||"list")); window.scrollTo({top:0,behavior:"smooth"}); }
   }));
   box.querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click",()=>{
@@ -641,6 +661,7 @@ $("modeSeg").querySelectorAll("button").forEach(b=>b.addEventListener("click",()
   state.mode=b.getAttribute("data-mode");
   $("modeSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on", x===b));
   $("containerRow").classList.toggle("hidden", state.mode!=="container");
+  renderSavedLists(lastSavedArr);
 }));
 $("pickContainer").addEventListener("input",()=>{
   state.container=$("pickContainer").value.trim();
