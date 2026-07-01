@@ -43,6 +43,13 @@
   .saved-sub{font-size:12px;color:var(--muted);}
   .saved .btn{padding:8px 14px;font-size:13px;}
   .btn-x{border:none;background:#f3f5f7;color:var(--muted);width:32px;height:32px;border-radius:8px;font-size:17px;cursor:pointer;flex:0 0 32px;}
+  .seg{display:flex;gap:6px;background:#eef2f5;border-radius:12px;padding:4px;}
+  .seg button{flex:1;border:none;background:transparent;font-family:'Inter',sans-serif;font-weight:600;font-size:14px;color:var(--muted);padding:10px;border-radius:9px;cursor:pointer;}
+  .seg button.on{background:#fff;color:var(--navy);box-shadow:0 1px 3px rgba(0,0,0,.08);}
+  .grp{margin-bottom:14px;}
+  .grphdr{font-family:'Montserrat',sans-serif;font-weight:700;font-size:12px;color:var(--navy);text-transform:uppercase;letter-spacing:.5px;margin:8px 0 6px;}
+  .cbadge{font-size:11px;font-weight:700;color:var(--green);background:#e3f2ef;padding:2px 7px;border-radius:6px;margin-left:6px;}
+  .completed-badge{font-size:13px;font-weight:700;color:var(--green);}
 
   /* progress */
   .progress-wrap{display:flex;align-items:center;gap:12px;margin-top:4px;}
@@ -104,10 +111,19 @@
   <!-- LOAD LIST -->
   <div class="card" id="loadCard">
     <h2>1 &middot; Load the consolidation list</h2>
-    <div class="row">
-      <button class="btn primary" id="uploadListBtn">Upload list (Excel / CSV / PDF)</button>
+    <div class="seg" id="modeSeg" style="margin-bottom:12px;">
+      <button type="button" data-mode="solo" class="on">Solo consolidation</button>
+      <button type="button" data-mode="container">Container pre-load</button>
     </div>
-    <input type="file" id="listFile" accept=".xlsx,.xls,.csv,.pdf" class="hidden" />
+    <div id="containerRow" class="hidden" style="margin-bottom:10px;">
+      <label style="display:block;font-size:12px;color:var(--muted);font-weight:600;margin-bottom:4px;">Container #</label>
+      <input type="text" id="containerNum" placeholder="e.g. MSKU1234567" autocomplete="off" style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px;background:#fff;color:var(--text);" />
+      <div class="hint">Office staff: set the container #, then drag in all the consolidations for this container.</div>
+    </div>
+    <div class="row">
+      <button class="btn primary" id="uploadListBtn">Upload list(s) (Excel / CSV / PDF)</button>
+    </div>
+    <input type="file" id="listFile" accept=".xlsx,.xls,.csv,.pdf" multiple class="hidden" />
     <div class="hint">Upload your consolidation list — or <b>drag &amp; drop</b> the file anywhere on this card — and it builds the pick checklist automatically.</div>
     <div id="loadBanner"></div>
     <div id="savedWrap">
@@ -129,9 +145,17 @@
         <input type="text" id="blNum" placeholder="Bill of Lading #" />
       </div>
       <div style="flex:1;">
+        <label>Container #</label>
+        <input type="text" id="pickContainer" placeholder="Container (optional)" />
+      </div>
+      <div style="flex:1;">
         <label>Picked by</label>
         <input type="text" id="pickerName" placeholder="Your name" />
       </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+      <button class="btn ghost" id="completeBtn">Mark completed</button>
+      <span id="completedBadge"></span>
     </div>
     <div class="progress-wrap">
       <div class="bar"><span id="barFill"></span></div>
@@ -180,7 +204,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <script>
-const state = { items: [], photos: [], slackConfigured: false, search: "", sortDir: "", listId: null, unsub: null, editing: null, deviceId: "" };
+const state = { items: [], photos: [], slackConfigured: false, search: "", sortDir: "", listId: null, unsub: null, editing: null, deviceId: "", mode: "solo", container: "", completed: false };
 state.deviceId = (function(){ try{ let d=localStorage.getItem("wrpick_device"); if(!d){ d="dev-"+Math.random().toString(36).slice(2)+Date.now().toString(36); localStorage.setItem("wrpick_device", d);} return d; }catch(e){ return "dev-"+Date.now(); } })();
 const $ = (id) => document.getElementById(id);
 
@@ -202,11 +226,13 @@ function listNameFrom(items, fallback){
   const fname=fallback? String(fallback).replace(/\.[^.]+$/,"").trim() : "";
   return String(cust||"").trim() || fname || "Consolidation";
 }
-function saveListToCloud(name, items){
+function saveListToCloud(name, items, opts){
   if(!listDB) return null;
   try{
     const withSid=items.map((it,i)=>Object.assign({sid:i}, it));
-    const ref=listDB.ref("picklists").push({ name:name||"Consolidation", items:withSid, createdAt:Date.now() });
+    const rec={ name:name||"Consolidation", items:withSid, createdAt:Date.now(),
+                container:(opts&&opts.container)||"", completed:!!(opts&&opts.completed) };
+    const ref=listDB.ref("picklists").push(rec);
     return ref.key;
   }catch(e){ return null; }
 }
@@ -221,15 +247,24 @@ function subscribeLists(){
     renderSavedLists(arr);
   });
 }
+function savedRow(l){
+  const badge=l.completed?'<span class="cbadge">\u2713 Completed</span>':'';
+  return '<div class="saved"><div class="saved-meta"><div class="saved-name">'+escapeHtml(l.name||"Consolidation")+badge+
+    '</div><div class="saved-sub">'+((l.items&&l.items.length)||0)+' line(s) · '+timeAgo(l.createdAt)+
+    '</div></div><button class="btn ghost" data-load="'+l.id+'">Load</button>'+
+    '<button class="btn-x" data-del="'+l.id+'" title="Delete">×</button></div>';
+}
 function renderSavedLists(arr){
   const box=$("savedLists");
   if(!arr.length){ box.innerHTML='<div class="hint">No saved lists yet. Upload one on any device and it shows up here for everyone.</div>'; return; }
-  box.innerHTML=arr.map(l=>
-    '<div class="saved"><div class="saved-meta"><div class="saved-name">'+escapeHtml(l.name||"Consolidation")+
-    '</div><div class="saved-sub">'+((l.items&&l.items.length)||0)+' line(s) · '+timeAgo(l.createdAt)+
-    '</div></div><button class="btn ghost" data-load="'+l.id+'">Load</button>'+
-    '<button class="btn-x" data-del="'+l.id+'" title="Delete">×</button></div>'
-  ).join("");
+  const groups={}, solo=[];
+  arr.forEach(l=>{ if(l.container){ (groups[l.container]=groups[l.container]||[]).push(l); } else solo.push(l); });
+  let html="";
+  Object.keys(groups).sort().forEach(cont=>{
+    html+='<div class="grp"><div class="grphdr">\uD83D\uDEA2 Container '+escapeHtml(cont)+'</div>'+groups[cont].map(savedRow).join("")+'</div>';
+  });
+  if(solo.length){ html+='<div class="grp">'+(Object.keys(groups).length?'<div class="grphdr">Individual consolidations</div>':'')+solo.map(savedRow).join("")+'</div>'; }
+  box.innerHTML=html;
   box.querySelectorAll("[data-load]").forEach(b=>b.addEventListener("click",()=>{
     const l=arr.find(x=>x.id===b.getAttribute("data-load"));
     if(l){ openList(l.id, l); toast("Loaded "+(l.name||"list")); window.scrollTo({top:0,behavior:"smooth"}); }
@@ -278,6 +313,10 @@ function openList(listId, listObj){
   $("postBar").classList.remove("hidden");
   if(listObj && listObj.name){ $("consolName").value = listObj.name; }
   else { const cust=(raw.find(it=>it.customer&&String(it.customer).trim())||{}).customer||""; if(cust) $("consolName").value=String(cust).trim(); }
+  state.container = (listObj && listObj.container) || "";
+  state.completed = !!(listObj && listObj.completed);
+  if($("pickContainer")) $("pickContainer").value = state.container;
+  updateCompletedUI();
   renderList(); updateProgress();
   if(listDB && state.listId){
     const ref=listDB.ref("pickstate/"+state.listId);
@@ -465,8 +504,10 @@ function buildMessage(){
   const total=state.items.length;
   const done=state.items.filter(x=>x.picked);
 
+  const cont=$("pickContainer")? $("pickContainer").value.trim():"";
   let head = consol || "Consolidation";
   if(bl) head += " — BL "+bl;
+  if(cont) head += " · Container "+cont;
   let msg = "📦 *Freight Pick* — "+head+"\n";
   msg += "*Picked:* "+done.length+" of "+total+" lines\n";
 
@@ -506,7 +547,9 @@ async function loadChannels(){
 async function post(){
   const channel=$("channelSel").value;
   if(!channel){ toast("Pick a channel first"); return; }
-  if(!state.items.some(x=>x.picked)){ toast("Nothing marked picked yet"); return; }
+  const total=state.items.length, done=state.items.filter(x=>x.picked).length;
+  if(done===0){ toast("Nothing marked picked yet"); return; }
+  if(done<total){ if(!confirm(done+" of "+total+" lines are checked off — "+(total-done)+" not picked yet. Post anyway?")) return; }
   const btn=$("postBtn"); btn.disabled=true; btn.textContent="Posting…";
   try{
     const r=await fetch("/api/post",{
@@ -539,7 +582,7 @@ function resetAll(){
   state.listId=null; state.editing=null;
   state.items=[]; state.photos=[];
   $("list").innerHTML=""; $("thumbs").innerHTML="";
-  $("consolName").value=""; $("blNum").value=""; $("pickerName").value="";
+  $("consolName").value=""; $("blNum").value=""; $("pickerName").value=""; if($("pickContainer")) $("pickContainer").value=""; state.container=""; state.completed=false; updateCompletedUI();
   state.search=""; state.sortDir=""; if($("pickSearch")) $("pickSearch").value=""; if($("sortSel")) $("sortSel").value="";
   $("photoCount").textContent="No photos yet — tap a button to add as many as you need.";
   $("pickCard").classList.add("hidden"); $("photoCard").classList.add("hidden");
@@ -554,8 +597,7 @@ function escapeHtml(s){ return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<"
 function banner(id,msg,kind){ $(id).innerHTML='<div class="banner '+(kind||"warn")+'">'+msg+'</div>'; }
 
 /* ---------- wire up ---------- */
-async function handleListFile(f){
-  if(!f) return;
+async function ingestFile(f, autoOpen){
   banner("loadBanner","Reading "+f.name+"…","warn");
   const fd=new FormData(); fd.append("file",f);
   try{
@@ -564,25 +606,53 @@ async function handleListFile(f){
     if(!r.ok||data.error) throw new Error(data.error||"parse failed");
     if(!data.items.length) throw new Error("No rows found — check the file");
     const nm=listNameFrom(data.items, f.name);
-    const key=saveListToCloud(nm, data.items);
-    if(key){ openList(key, { name:nm, items:data.items }); }
-    else { loadItems(data.items); }
-    if(!$("consolName").value.trim()) $("consolName").value = nm;
-    banner("loadBanner","Loaded "+data.items.length+" line(s) from "+f.name+" — saved & shared live to all devices.","warn");
+    const container=(state.mode==="container")? ($("containerNum").value.trim()) : "";
+    const key=saveListToCloud(nm, data.items, { container, completed:false });
+    if(autoOpen && key){ openList(key, { name:nm, items:data.items, container, completed:false }); if(!$("consolName").value.trim()) $("consolName").value=nm; }
+    else if(autoOpen){ loadItems(data.items); }
+    banner("loadBanner","Added \u201C"+nm+"\u201D ("+data.items.length+" lines)"+(container?(" to Container "+container):"")+" — shared to all devices.","warn");
   }catch(err){
-    banner("loadBanner","Could not read that file: "+err.message+". (Upload parsing needs the deployed app.)","warn");
+    banner("loadBanner","Could not read "+f.name+": "+err.message+".","warn");
   }
+}
+function handleFiles(fileList){
+  const files=Array.from(fileList||[]);
+  if(!files.length) return;
+  if(state.mode==="container" && !$("containerNum").value.trim()){ banner("loadBanner","Enter a Container # first (top of the page), then add your lists.","warn"); return; }
+  const autoOpen = (files.length===1 && state.mode==="solo");
+  files.forEach(f=>ingestFile(f, autoOpen));
+}
+function updateCompletedUI(){
+  const b=$("completedBadge"), btn=$("completeBtn"); if(!b||!btn) return;
+  if(state.completed){ b.innerHTML='<span class="completed-badge">\u2713 Completed</span>'; btn.textContent="Reopen list"; }
+  else { b.innerHTML=""; btn.textContent="Mark completed"; }
 }
 $("uploadListBtn").addEventListener("click",()=>$("listFile").click());
 $("pickSearch").addEventListener("input",e=>{ state.search=e.target.value; renderList(); });
 $("sortSel").addEventListener("change",e=>{ state.sortDir=e.target.value; renderList(); });
-$("listFile").addEventListener("change",e=>{ handleListFile(e.target.files[0]); e.target.value=""; });
+$("listFile").addEventListener("change",e=>{ handleFiles(e.target.files); e.target.value=""; });
 (function(){
   const drop=$("loadCard");
   ["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{ e.preventDefault(); if(e.dataTransfer) e.dataTransfer.dropEffect="copy"; drop.classList.add("drag"); }));
   drop.addEventListener("dragleave",e=>{ if(!drop.contains(e.relatedTarget)) drop.classList.remove("drag"); });
-  drop.addEventListener("drop",e=>{ e.preventDefault(); drop.classList.remove("drag"); const f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0]; if(f) handleListFile(f); });
+  drop.addEventListener("drop",e=>{ e.preventDefault(); drop.classList.remove("drag"); if(e.dataTransfer&&e.dataTransfer.files) handleFiles(e.dataTransfer.files); });
 })();
+$("modeSeg").querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{
+  state.mode=b.getAttribute("data-mode");
+  $("modeSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on", x===b));
+  $("containerRow").classList.toggle("hidden", state.mode!=="container");
+}));
+$("pickContainer").addEventListener("input",()=>{
+  state.container=$("pickContainer").value.trim();
+  if(state.listId && listDB) listDB.ref("picklists/"+state.listId+"/container").set(state.container);
+});
+$("completeBtn").addEventListener("click",()=>{
+  if(!state.listId){ toast("Load a list first"); return; }
+  state.completed=!state.completed;
+  if(listDB) listDB.ref("picklists/"+state.listId+"/completed").set(state.completed);
+  updateCompletedUI();
+  toast(state.completed?"Marked completed":"Reopened");
+});
 $("takeBtn").addEventListener("click",()=>$("cameraInput").click());
 $("uploadPhotoBtn").addEventListener("click",()=>$("galleryInput").click());
 $("cameraInput").addEventListener("change",e=>{ addPhotoFiles(e.target.files); e.target.value=""; });
