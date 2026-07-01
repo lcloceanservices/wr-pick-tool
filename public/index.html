@@ -211,7 +211,7 @@
 <script>
 const state = { items: [], photos: [], slackConfigured: false, search: "", sortDir: "", listId: null, unsub: null, editing: null, deviceId: "", mode: "solo", container: "", completed: false, collapsed: {}, celebrated: false, openedAt: 0 };
 state.deviceId = (function(){ try{ let d=localStorage.getItem("wrpick_device"); if(!d){ d="dev-"+Math.random().toString(36).slice(2)+Date.now().toString(36); localStorage.setItem("wrpick_device", d);} return d; }catch(e){ return "dev-"+Date.now(); } })();
-try{ state.collapsed = JSON.parse(localStorage.getItem("wrpick_collapsed")||"{}")||{}; }catch(e){ state.collapsed={}; }
+try{ state.collapsed = JSON.parse(sessionStorage.getItem("wrpick_collapsed")||"{}")||{}; }catch(e){ state.collapsed={}; }
 const $ = (id) => document.getElementById(id);
 
 /* ---------- shared saved lists (Firebase) ---------- */
@@ -282,7 +282,7 @@ function renderSavedLists(arr){
   box.innerHTML=html;
   box.querySelectorAll(".grphdr.toggle").forEach(h=>h.addEventListener("click",()=>{
     const c=h.getAttribute("data-grp"); state.collapsed[c]=!state.collapsed[c];
-    try{ localStorage.setItem("wrpick_collapsed", JSON.stringify(state.collapsed)); }catch(e){}
+    try{ sessionStorage.setItem("wrpick_collapsed", JSON.stringify(state.collapsed)); }catch(e){}
     renderSavedLists(lastSavedArr);
   }));
   box.querySelectorAll("[data-load]").forEach(b=>b.addEventListener("click",()=>{
