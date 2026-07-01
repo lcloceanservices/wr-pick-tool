@@ -265,20 +265,26 @@ function renderSavedLists(arr){
   lastSavedArr = arr || [];
   const box=$("savedLists");
   const lbl=document.querySelector(".savedlbl");
-  if(lbl) lbl.textContent = "Saved lists (shared across all devices)";
-  if(!(arr||[]).length){ box.innerHTML='<div class="hint">No saved lists yet. Upload one on any device and it shows up here for everyone.</div>'; return; }
+  if(lbl) lbl.textContent = (state.mode==="container") ? "Containers (shared across all devices)" : "Consolidation lists (shared across all devices)";
   const groups={}, solo=[];
   (arr||[]).forEach(l=>{ if(l.container){ (groups[l.container]=groups[l.container]||[]).push(l); } else solo.push(l); });
   let html="";
-  // Container groups first (collapsible), then individual lists — both always shown, kept separate.
-  Object.keys(groups).sort().forEach(cont=>{
-    const g=groups[cont]; const doneN=g.filter(x=>x.completed).length; const col=!!state.collapsed[cont];
-    html+='<div class="grp"><div class="grphdr toggle'+(col?' collapsed':'')+'" data-grp="'+escapeHtml(cont)+'">'
-      +'<span class="chev">\u25BE</span>\uD83D\uDEA2 Container '+escapeHtml(cont)
-      +'<span class="gcount">'+g.length+' list'+(g.length!==1?'s':'')+(doneN?(' · '+doneN+' done'):'')+'</span></div>'
-      +'<div class="gbody'+(col?' collapsed':'')+'">'+g.map(savedRow).join("")+'</div></div>';
-  });
-  if(solo.length){ html+='<div class="grp"><div class="grphdr">'+(Object.keys(groups).length?'Individual consolidations':'Consolidation lists')+'</div>'+solo.map(savedRow).join("")+'</div>'; }
+  if(state.mode==="container"){
+    // Container pre-load view: ONLY containers, nothing from the solo side.
+    const keys=Object.keys(groups).sort();
+    if(!keys.length){ html='<div class="hint">No containers yet. Set a Container # above, then drag in the consolidations for it.</div>'; }
+    else keys.forEach(cont=>{
+      const g=groups[cont]; const doneN=g.filter(x=>x.completed).length; const col=!!state.collapsed[cont];
+      html+='<div class="grp"><div class="grphdr toggle'+(col?' collapsed':'')+'" data-grp="'+escapeHtml(cont)+'">'
+        +'<span class="chev">\u25BE</span>\uD83D\uDEA2 Container '+escapeHtml(cont)
+        +'<span class="gcount">'+g.length+' list'+(g.length!==1?'s':'')+(doneN?(' · '+doneN+' done'):'')+'</span></div>'
+        +'<div class="gbody'+(col?' collapsed':'')+'">'+g.map(savedRow).join("")+'</div></div>';
+    });
+  } else {
+    // Solo view: ONLY individual lists, nothing from any container.
+    if(!solo.length){ html='<div class="hint">No individual consolidations yet. Upload one here, or switch to <b>Container pre-load</b> for container lists.</div>'; }
+    else html=solo.map(savedRow).join("");
+  }
   box.innerHTML=html;
   box.querySelectorAll(".grphdr.toggle").forEach(h=>h.addEventListener("click",()=>{
     const c=h.getAttribute("data-grp"); state.collapsed[c]=!state.collapsed[c];
