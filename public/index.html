@@ -328,6 +328,10 @@ function renderList(){
   wrap.querySelectorAll("[data-loc]").forEach(inp=>{
     inp.addEventListener("input",()=>{ getItem(inp.getAttribute("data-loc")).location=inp.value; });
   });
+
+  // Re-apply picked / short-pick styling so sorting or searching never visually
+  // "unchecks" a row — the checkmark, green highlight and flags follow the saved state.
+  getVisibleItems().forEach(it=>updateRowState(it));
 }
 
 function getItem(id){ return state.items.find(x=>x.id===id); }
