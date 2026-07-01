@@ -57,7 +57,7 @@
   .completed-badge{font-size:13px;font-weight:700;color:var(--green);}
 
   /* progress */
-  .progress-wrap{display:flex;align-items:center;gap:12px;margin-top:4px;}
+  .progress-wrap{display:flex;align-items:center;gap:12px;position:sticky;top:56px;z-index:15;background:var(--card);margin:0 -16px 4px;padding:12px 16px;border-bottom:1px solid var(--line);box-shadow:0 4px 10px rgba(24,41,77,.04);}
   .bar{flex:1;height:10px;background:#e6ebf1;border-radius:6px;overflow:hidden;}
   .bar > span{display:block;height:100%;width:0;background:var(--green);transition:width .25s;}
   .progress-num{font-size:13px;font-weight:700;color:var(--navy);white-space:nowrap;}
@@ -209,7 +209,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <script>
-const state = { items: [], photos: [], slackConfigured: false, search: "", sortDir: "", listId: null, unsub: null, editing: null, deviceId: "", mode: "solo", container: "", completed: false, collapsed: {} };
+const state = { items: [], photos: [], slackConfigured: false, search: "", sortDir: "", listId: null, unsub: null, editing: null, deviceId: "", mode: "solo", container: "", completed: false, collapsed: {}, celebrated: false, openedAt: 0 };
 state.deviceId = (function(){ try{ let d=localStorage.getItem("wrpick_device"); if(!d){ d="dev-"+Math.random().toString(36).slice(2)+Date.now().toString(36); localStorage.setItem("wrpick_device", d);} return d; }catch(e){ return "dev-"+Date.now(); } })();
 try{ state.collapsed = JSON.parse(localStorage.getItem("wrpick_collapsed")||"{}")||{}; }catch(e){ state.collapsed={}; }
 const $ = (id) => document.getElementById(id);
@@ -318,6 +318,7 @@ function openList(listId, listObj){
   if(state.unsub){ try{state.unsub();}catch(e){} state.unsub=null; }
   state.listId = listId || null;
   state.editing = null;
+  state.openedAt = Date.now(); state.celebrated = false;
   const raw = (listObj && listObj.items) || [];
   state.items = raw.map((it,i)=>({
     sid: (it.sid!=null? it.sid : i),
@@ -331,6 +332,7 @@ function openList(listId, listObj){
   $("pickCard").classList.remove("hidden");
   $("photoCard").classList.remove("hidden");
   $("postBar").classList.remove("hidden");
+  positionProgress();
   if(listObj && listObj.name){ $("consolName").value = listObj.name; }
   else { const cust=(raw.find(it=>it.customer&&String(it.customer).trim())||{}).customer||""; if(cust) $("consolName").value=String(cust).trim(); }
   state.container = (listObj && listObj.container) || "";
@@ -487,6 +489,32 @@ function updateProgress(){
   const done=state.items.filter(x=>x.picked).length;
   $("progNum").textContent=done+" / "+total;
   $("barFill").style.width=(total? (done/total*100):0)+"%";
+  const complete = total>0 && done===total;
+  if(complete){
+    if(!state.celebrated && (Date.now()-(state.openedAt||0) > 1500)){ confettiBurst(); toast("All lines picked! \uD83C\uDF89"); }
+    state.celebrated=true;
+  } else {
+    state.celebrated=false;
+  }
+}
+function positionProgress(){
+  const h=document.querySelector("header"), pw=document.querySelector(".progress-wrap");
+  if(h&&pw) pw.style.top=h.offsetHeight+"px";
+}
+function confettiBurst(){
+  const c=document.createElement("canvas");
+  c.style.cssText="position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:9999";
+  document.body.appendChild(c);
+  const ctx=c.getContext("2d"); const W=c.width=window.innerWidth, H=c.height=window.innerHeight;
+  const colors=["#18294d","#52b3c0","#e8623f","#1d9e75","#facc15"]; const parts=[];
+  for(let i=0;i<150;i++){ parts.push({x:Math.random()*W, y:-20-Math.random()*H*0.4, w:6+Math.random()*7, h:8+Math.random()*8, col:colors[i%colors.length], vx:(Math.random()-0.5)*6, vy:3+Math.random()*5, rot:Math.random()*6.28, vr:(Math.random()-0.5)*0.35}); }
+  let t=0;
+  (function frame(){
+    t++; ctx.clearRect(0,0,W,H);
+    parts.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; p.vy+=0.06; p.rot+=p.vr;
+      ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot); ctx.fillStyle=p.col; ctx.fillRect(-p.w/2,-p.h/2,p.w,p.h); ctx.restore(); });
+    if(t<170){ requestAnimationFrame(frame); } else { c.remove(); }
+  })();
 }
 
 /* ---------- photos ---------- */
@@ -682,6 +710,8 @@ $("postBtn").addEventListener("click",post);
 
 loadChannels();
 subscribeLists();
+positionProgress();
+window.addEventListener("resize", positionProgress);
 </script>
 </body>
 </html>
