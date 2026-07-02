@@ -348,7 +348,7 @@
           </div>
           <div class="scfld" style="margin-top:12px;"><label>Picked by</label><input type="text" id="scPickerName" autocomplete="off" placeholder="Your name"></div>
           <div class="scpick-bar"><div class="bar" style="flex:1;"><span id="scPickBar"></span></div><div class="progress-num" id="scPickNum">0 / 0</div></div>
-          <div class="pickctl" style="margin-top:12px;"><input type="text" id="scPickSearch" autocomplete="off" placeholder="Scan a WR (Enter) or search…"></div>
+          <div class="pickctl" style="margin-top:12px;"><input type="text" id="scPickSearch" autocomplete="off" placeholder="Scan a WR (Enter) or search…"><select id="scPickSort"><option value="loc">Walk route (location)</option><option value="wr">WR # ↑ (low to high)</option><option value="wrdesc">WR # ↓ (high to low)</option><option value="pallet">Pallet #</option><option value="list">List order</option></select></div>
         </div>
         <div class="card"><div id="scPickList"></div></div>
       </div>
@@ -1078,19 +1078,25 @@ function scResolveLoc(wr){
   const w=String(wr||"").trim().toLowerCase();
   if(!w) return { found:false, palletStr:"", locStr:"", sortKey:9999 };
   const matches=Object.keys(scContents).map(k=>scContents[k]).filter(c=>String(c.wr||"").trim().toLowerCase()===w);
-  if(!matches.length) return { found:false, palletStr:"", locStr:"", sortKey:9999 };
+  if(!matches.length) return { found:false, palletStr:"", locStr:"", sortKey:9999, palNo:null };
   const pallets=[], locs=[];
   matches.forEach(c=>{ const p=palletById(c.palletId); if(p){ if(pallets.indexOf(p.no)<0) pallets.push(p.no); if(p.location && locs.indexOf(p.location)<0) locs.push(p.location); } });
   pallets.sort((a,b)=>a-b);
   locs.sort((a,b)=>((SC_LOC_ORDER[a]==null?9998:SC_LOC_ORDER[a])-(SC_LOC_ORDER[b]==null?9998:SC_LOC_ORDER[b])));
   const sortKey=locs.length ? (SC_LOC_ORDER[locs[0]]==null?9998:SC_LOC_ORDER[locs[0]]) : 9997;
-  return { found:true, palletStr:pallets.map(n=>"#"+n).join(", "), locStr:locs.join(", "), sortKey:sortKey };
+  return { found:true, palletStr:pallets.map(n=>"#"+n).join(", "), locStr:locs.join(", "), sortKey:sortKey, palNo:(pallets.length?pallets[0]:null) };
 }
 function scRenderPick(){
   const box=$("scPickList"); if(!box) return;
   const q=($("scPickSearch")&&$("scPickSearch").value.trim().toLowerCase())||"";
-  let rows=scPickItems.map(it=>Object.assign({}, it, {_loc:scResolveLoc(it.wr)}));
-  rows.sort((a,b)=>(a._loc.sortKey-b._loc.sortKey) || String(a.wr).localeCompare(String(b.wr),undefined,{numeric:true}));
+  const mode=($("scPickSort")&&$("scPickSort").value)||"loc";
+  let rows=scPickItems.map((it,i)=>Object.assign({}, it, {_loc:scResolveLoc(it.wr), _i:i}));
+  const byWr=(a,b)=>String(a.wr).localeCompare(String(b.wr),undefined,{numeric:true});
+  if(mode==="wr") rows.sort(byWr);
+  else if(mode==="wrdesc") rows.sort((a,b)=>byWr(b,a));
+  else if(mode==="list") rows.sort((a,b)=>a._i-b._i);
+  else if(mode==="pallet") rows.sort((a,b)=>((a._loc.palNo||99999)-(b._loc.palNo||99999)) || byWr(a,b));
+  else rows.sort((a,b)=>(a._loc.sortKey-b._loc.sortKey) || byWr(a,b));
   if(q) rows=rows.filter(r=>((r.wr||"")+" "+(r.description||"")+" "+r._loc.locStr+" "+r._loc.palletStr).toLowerCase().indexOf(q)>=0);
   if(!rows.length){ box.innerHTML='<div class="empty-note">'+(scPickItems.length?"No matching lines.":"No lines in this list.")+'</div>'; return; }
   box.innerHTML=rows.map(it=>{
@@ -1196,6 +1202,7 @@ function scPickWire(){
   const pf=$("scPickFile"); if(pf) pf.addEventListener("change",e=>{ const f=e.target.files&&e.target.files[0]; if(f) scIngest(f); e.target.value=""; });
   const pn=$("scPickerName"); if(pn){ pn.value=scPickerName(); pn.addEventListener("input",()=>{ try{localStorage.setItem("sc_picker",pn.value);}catch(e){} }); }
   const ps=$("scPickSearch"); if(ps){ ps.addEventListener("input", scRenderPick); ps.addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); scScan(); } }); }
+  const so=$("scPickSort"); if(so){ try{ const sv=localStorage.getItem("sc_picksort"); if(sv) so.value=sv; }catch(e){} so.addEventListener("change",()=>{ try{localStorage.setItem("sc_picksort",so.value);}catch(e){} scRenderPick(); }); }
   const drop=$("scPickLoad");
   if(drop){
     ["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{ e.preventDefault(); drop.classList.add("drag"); }));
