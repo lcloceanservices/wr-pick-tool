@@ -157,6 +157,12 @@
   .pick.flash{box-shadow:0 0 0 3px var(--teal);transition:box-shadow .2s;}
   #scPickLoad.drag{border:2px dashed var(--teal);background:#eef9fb;}
   .scpick-bar{display:flex;align-items:center;gap:12px;margin-top:12px;}
+  .mv{display:flex;gap:10px;align-items:flex-start;border-top:1px solid var(--line);padding:10px 2px;}
+  .mv:first-child{border-top:none;}
+  .mv-ic{font-size:16px;flex:0 0 22px;text-align:center;}
+  .mv-b{flex:1;min-width:0;}
+  .mv-t{font-size:14px;color:var(--text);word-break:break-word;}
+  .mv-s{font-size:12px;color:var(--muted);margin-top:2px;}
   @media(max-width:860px){
     .menu-btn{display:inline-flex;align-items:center;justify-content:center;}
     .sidebar{position:fixed;top:0;left:0;height:100vh;z-index:30;transform:translateX(-100%);transition:transform .22s;box-shadow:2px 0 16px rgba(0,0,0,.2);padding-top:16px;}
@@ -322,8 +328,20 @@
   </div>
 
   <div class="page hidden" data-page="sc-moves" id="page-sc-moves">
-    <div class="page-head"><h1>Movements — The Sports Center</h1><p>Track every pallet and carton move so locations stay accurate for picking day.</p></div>
-    <div class="wrap wide"><div class="card"><p class="stub">&#128256; <b>Coming in Phase 4.</b><br>Move a pallet to a new location, shift cartons between pallets, and review the full audit trail by pallet, WR, or location.</p></div></div>
+    <div class="page-head"><h1>Movements — The Sports Center</h1><p>Every receipt, pallet move, and WR reassignment — newest first — so locations stay accurate for picking day.</p></div>
+    <div class="wrap wide">
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+          <h2 style="margin:0;">History</h2>
+          <span class="nav-badge" id="scMoveCount" style="background:#eef2f5;color:var(--muted);">0</span>
+        </div>
+        <div class="pickctl">
+          <input type="text" id="scMoveSearch" autocomplete="off" placeholder="Search WR, pallet #, or location…">
+          <select id="scMoveFilter"><option value="">All types</option><option value="receive">Receipts</option><option value="pallet_move">Pallet moves</option><option value="wr_move">WR moves</option><option value="other">Status / deletes</option></select>
+        </div>
+        <div id="scMoveList"></div>
+      </div>
+    </div>
   </div>
 
   <div class="page hidden" data-page="sc-picker" id="page-sc-picker">
@@ -982,10 +1000,12 @@ function scReceive(){
   try{ localStorage.setItem("sc_by", by); }catch(e){}
   const dup=Object.keys(scContents).find(k=>String(scContents[k].wr||"").trim().toLowerCase()===wr.toLowerCase());
   if(dup){ const dp=palletById(scContents[dup].palletId); if(!confirm("WR "+wr+" is already on Pallet #"+(dp?dp.no:"?")+".\n\nAdd this as a second entry anyway?")) return; }
-  const addContent=(palletId)=>{
+  const addContent=(palletId, pInfo)=>{
     scDB.ref(SC+"/contents").push({ wr:wr, description:desc, cartons:cartons, unit:unit, palletId:palletId, addedAt:Date.now(), addedBy:by });
-    const p=palletById(palletId);
-    banner("scReceiveBanner","✓ WR "+wr+" received onto Pallet #"+(p?p.no:"new")+".","ok");
+    const no = pInfo ? pInfo.no : ((palletById(palletId)||{}).no);
+    const loc = pInfo ? pInfo.loc : ((palletById(palletId)||{}).location||"");
+    scLogMove({ type:"receive", wr:wr, palletNo:(no!=null?no:null), toLoc:loc, cartons:cartons, unit:unit });
+    banner("scReceiveBanner","✓ WR "+wr+" received onto Pallet #"+(no!=null?no:"new")+".","ok");
     $("scWr").value=""; $("scDesc").value=""; $("scCartons").value=""; $("scWr").focus();
   };
   if(target==="new"){
@@ -993,9 +1013,9 @@ function scReceive(){
     scNextPalletNo(no=>{
       if(no==null){ banner("scReceiveBanner","Couldn't allocate a pallet number — try again.","err"); return; }
       const ref=scDB.ref(SC+"/pallets").push();
-      ref.set({ no:no, location:loc, status:"active", createdAt:Date.now(), createdBy:by, updatedAt:Date.now() }, ()=>{ addContent(ref.key); $("scPalletSel").value="new"; });
+      ref.set({ no:no, location:loc, status:"active", createdAt:Date.now(), createdBy:by, updatedAt:Date.now() }, ()=>{ addContent(ref.key, {no:no, loc:loc}); $("scPalletSel").value="new"; });
     });
-  } else { addContent(target); }
+  } else { const tp=palletById(target); addContent(target, {no:(tp?tp.no:null), loc:(tp?tp.location:"")}); }
 }
 
 function renderInventory(){
@@ -1029,10 +1049,15 @@ function scSaveContent(id){
   if(!$("ed_wr_"+id)) return;
   const wr=$("ed_wr_"+id).value.trim(), desc=$("ed_desc_"+id).value.trim(), ct=Number($("ed_ct_"+id).value)||0, un=($("ed_un_"+id)&&$("ed_un_"+id).value)||"ctn", pal=$("ed_pal_"+id).value;
   if(!wr){ toast("WR can't be blank"); return; }
+  const old=scContents[id]||{};
   scDB.ref(SC+"/contents/"+id).update({ wr:wr, description:desc, cartons:ct, unit:un, palletId:pal });
+  if(old.palletId && pal && old.palletId!==pal){
+    const fp=palletById(old.palletId)||{}, tp=palletById(pal)||{};
+    scLogMove({ type:"wr_move", wr:wr, fromPalletNo:(fp.no!=null?fp.no:null), toPalletNo:(tp.no!=null?tp.no:null), fromLoc:(fp.location||""), toLoc:(tp.location||""), cartons:ct, unit:un });
+  }
   scEditId=null; toast("Saved");
 }
-function scDeleteContent(id){ const r=scContents[id]; if(!r) return; if(confirm("Remove WR "+(r.wr||"")+" from inventory?")) scDB.ref(SC+"/contents/"+id).remove(); }
+function scDeleteContent(id){ const r=scContents[id]; if(!r) return; if(confirm("Remove WR "+(r.wr||"")+" from inventory?")){ scDB.ref(SC+"/contents/"+id).remove(); scLogMove({ type:"delete_wr", wr:r.wr, palletNo:((palletById(r.palletId)||{}).no) }); } }
 
 function renderPallets(){
   const box=$("scPalletList"); if(!box) return;
@@ -1060,8 +1085,8 @@ function renderPallets(){
       +'</div></div>';
   }).join("");
 }
-function scSetLocation(id,loc){ scDB.ref(SC+"/pallets/"+id).update({location:loc, updatedAt:Date.now()}); toast(loc?("Moved to "+loc):"Location cleared"); }
-function scToggleEmpty(id){ const p=scPallets[id]; if(!p) return; scDB.ref(SC+"/pallets/"+id).update({status:(p.status==="empty")?"active":"empty", updatedAt:Date.now()}); }
+function scSetLocation(id,loc){ const p=scPallets[id]; const from=p?(p.location||""):""; if(from===loc){ return; } scDB.ref(SC+"/pallets/"+id).update({location:loc, updatedAt:Date.now()}); scLogMove({ type:"pallet_move", palletNo:(p?p.no:null), fromLoc:from, toLoc:loc }); toast(loc?("Moved to "+loc):"Location cleared"); }
+function scToggleEmpty(id){ const p=scPallets[id]; if(!p) return; const ns=(p.status==="empty")?"active":"empty"; scDB.ref(SC+"/pallets/"+id).update({status:ns, updatedAt:Date.now()}); scLogMove({ type:(ns==="empty"?"pallet_empty":"pallet_active"), palletNo:p.no }); }
 function scRenamePallet(id){
   const p=scPallets[id]; if(!p) return;
   const v=prompt("Pallet number:", p.no); if(v==null) return;
@@ -1071,11 +1096,13 @@ function scRenamePallet(id){
   scDB.ref(SC+"/pallets/"+id).update({no:n, updatedAt:Date.now()});
 }
 function scDeletePallet(id){
+  const p=scPallets[id];
   const items=contentsForPallet(id);
   if(items.length){ if(!confirm("This pallet has "+items.length+" WR(s). Deleting it also removes those inventory records. Continue?")) return; }
   else { if(!confirm("Delete this pallet?")) return; }
   const updates={}; items.forEach(c=>updates[SC+"/contents/"+c.id]=null); updates[SC+"/pallets/"+id]=null;
   scDB.ref().update(updates);
+  scLogMove({ type:"delete_pallet", palletNo:(p?p.no:null) });
 }
 
 function printLabel(no){
@@ -1093,6 +1120,35 @@ function printLabel(no){
     +'<scr'+'ipt>window.onload=function(){try{JsBarcode("#bc","'+code+'",{format:"CODE128",displayValue:false,margin:0,height:42});}catch(e){}setTimeout(function(){window.print();},350);};</scr'+'ipt>'
     +'</body></html>';
   w.document.write(html); w.document.close();
+}
+
+/* ---------- Sports Center movements / history ---------- */
+let scMoves={};
+function scLogMove(m){ if(!scDB) return; scDB.ref(SC+"/movements").push(Object.assign({ at:Date.now(), by:(scByName()||"") }, m)); }
+function scQtyTag(m){ return m.cartons ? (" ("+m.cartons+" "+(m.unit==="plt"?"plt":"ctn")+(Number(m.cartons)===1?"":"s")+")") : ""; }
+function scMoveText(m){
+  const L=l=>l?escapeHtml(l):"—", P=n=>(n!=null?("#"+n):"#?");
+  switch(m.type){
+    case "receive": return { ico:"📥", txt:"Received <b>WR "+escapeHtml(m.wr||"")+"</b>"+scQtyTag(m)+" → Pallet "+P(m.palletNo)+(m.toLoc?(" · "+escapeHtml(m.toLoc)):"") };
+    case "pallet_move": return { ico:"🔀", txt:"Pallet "+P(m.palletNo)+" moved "+L(m.fromLoc)+" → "+L(m.toLoc) };
+    case "wr_move": return { ico:"↪", txt:"<b>WR "+escapeHtml(m.wr||"")+"</b> moved Pallet "+P(m.fromPalletNo)+(m.fromLoc?(" ("+escapeHtml(m.fromLoc)+")"):"")+" → Pallet "+P(m.toPalletNo)+(m.toLoc?(" ("+escapeHtml(m.toLoc)+")"):"") };
+    case "pallet_empty": return { ico:"🗑", txt:"Pallet "+P(m.palletNo)+" marked empty" };
+    case "pallet_active": return { ico:"♻", txt:"Pallet "+P(m.palletNo)+" reactivated" };
+    case "delete_pallet": return { ico:"❌", txt:"Deleted Pallet "+P(m.palletNo) };
+    case "delete_wr": return { ico:"❌", txt:"Removed <b>WR "+escapeHtml(m.wr||"")+"</b> from Pallet "+P(m.palletNo) };
+    default: return { ico:"•", txt:escapeHtml(m.type||"movement") };
+  }
+}
+function renderMovements(){
+  const box=$("scMoveList"); if(!box) return;
+  const q=($("scMoveSearch")&&$("scMoveSearch").value.trim().toLowerCase())||"";
+  const filt=($("scMoveFilter")&&$("scMoveFilter").value)||"";
+  let arr=Object.keys(scMoves).map(k=>Object.assign({id:k}, scMoves[k])).sort((a,b)=>(b.at||0)-(a.at||0));
+  const cnt=$("scMoveCount"); if(cnt) cnt.textContent=arr.length;
+  if(filt) arr=arr.filter(m=> filt==="other" ? ["pallet_empty","pallet_active","delete_pallet","delete_wr"].indexOf(m.type)>=0 : m.type===filt );
+  if(q) arr=arr.filter(m=> [m.wr,("#"+(m.palletNo||"")),("#"+(m.fromPalletNo||"")),("#"+(m.toPalletNo||"")),m.fromLoc,m.toLoc,m.type,m.by].join(" ").toLowerCase().indexOf(q)>=0 );
+  if(!arr.length){ box.innerHTML='<div class="empty-note">'+(Object.keys(scMoves).length?"No matching movements.":"No movements logged yet.")+'</div>'; return; }
+  box.innerHTML=arr.map(m=>{ const t=scMoveText(m); return '<div class="mv"><span class="mv-ic">'+t.ico+'</span><div class="mv-b"><div class="mv-t">'+t.txt+'</div><div class="mv-s">'+timeAgo(m.at)+(m.by?(' · '+escapeHtml(m.by)):'')+'</div></div></div>'; }).join("");
 }
 
 /* ---------- Sports Center picker ---------- */
@@ -1246,11 +1302,14 @@ function scInit(){
   const is=$("scInvSearch"); if(is) is.addEventListener("input", renderInventory);
   const psr=$("scPalSearch"); if(psr) psr.addEventListener("input", renderPallets);
   const pf=$("scPalFilter"); if(pf) pf.addEventListener("change", renderPallets);
+  const mvs=$("scMoveSearch"); if(mvs) mvs.addEventListener("input", renderMovements);
+  const mvf=$("scMoveFilter"); if(mvf) mvf.addEventListener("change", renderMovements);
   scPickWire();
   if(!scDB){ if($("scReceiveBanner")) banner("scReceiveBanner","Database unavailable — receiving is offline.","err"); return; }
   scDB.ref(SC+"/counters/palletSeq").on("value", s=>{ scSeq=s.val()||0; refreshPalletSelect(); });
   scDB.ref(SC+"/pallets").on("value", s=>{ scPallets=s.val()||{}; refreshPalletSelect(); renderInventory(); renderPallets(); if(scPickItems.length) scRenderPick(); });
   scDB.ref(SC+"/contents").on("value", s=>{ scContents=s.val()||{}; refreshPalletSelect(); renderInventory(); renderPallets(); if(scPickItems.length) scRenderPick(); });
+  scDB.ref(SC+"/movements").limitToLast(500).on("value", s=>{ scMoves=s.val()||{}; renderMovements(); });
   scSubscribePickLists();
 }
 
