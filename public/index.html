@@ -377,7 +377,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <script>
-const state = { items: [], photos: [], slackConfigured: false, search: "", sortDir: "", listId: null, unsub: null, editing: null, deviceId: "", mode: "solo", container: "", completed: false, collapsed: {}, celebrated: false, openedAt: 0 };
+const state = { items: [], photos: [], slackConfigured: false, search: "", sortDir: "", listId: null, unsub: null, editing: null, deviceId: "", mode: "solo", container: "", completed: false, collapsed: {}, celebrated: false, openedAt: 0, session: { solo:{listId:null, photos:[]}, container:{listId:null, photos:[]} } };
 state.deviceId = (function(){ try{ let d=localStorage.getItem("wrpick_device"); if(!d){ d="dev-"+Math.random().toString(36).slice(2)+Date.now().toString(36); localStorage.setItem("wrpick_device", d);} return d; }catch(e){ return "dev-"+Date.now(); } })();
 try{ state.collapsed = JSON.parse(sessionStorage.getItem("wrpick_collapsed")||"{}")||{}; }catch(e){ state.collapsed={}; }
 const $ = (id) => document.getElementById(id);
@@ -519,6 +519,7 @@ function openList(listId, listObj){
     const cb=ref.on("value", snap=>applyRemote(snap.val()||{}));
     state.unsub=()=>{ try{ref.off("value",cb);}catch(e){} };
   }
+  if(state.session && state.session[state.mode]) state.session[state.mode].listId = state.listId;
 }
 /* offline / no-Firebase fallback */
 function loadItems(rawItems){ openList(null, { items: rawItems||[] }); }
@@ -811,6 +812,7 @@ function resetAll(){
   $("postBar").classList.add("hidden");
   $("postBanner").innerHTML="";
   const rb=$("restartBtn"); if(rb) rb.remove();
+  if(state.session && state.session[state.mode]){ state.session[state.mode]={listId:null, photos:[]}; }
   window.scrollTo({top:0,behavior:"smooth"});
 }
 
@@ -859,11 +861,35 @@ $("listFile").addEventListener("change",e=>{ handleFiles(e.target.files); e.targ
   drop.addEventListener("dragleave",e=>{ if(!drop.contains(e.relatedTarget)) drop.classList.remove("drag"); });
   drop.addEventListener("drop",e=>{ e.preventDefault(); drop.classList.remove("drag"); if(e.dataTransfer&&e.dataTransfer.files) handleFiles(e.dataTransfer.files); });
 })();
-$("modeSeg").querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{
-  state.mode=b.getAttribute("data-mode");
-  $("modeSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on", x===b));
-  $("containerRow").classList.toggle("hidden", state.mode!=="container");
+function applyMode(newMode){
+  if(!newMode || newMode===state.mode) return;
+  // stash the current tab's live pick session
+  if(state.session && state.session[state.mode]){
+    state.session[state.mode].listId = state.listId;
+    state.session[state.mode].photos = state.photos.slice();
+  }
+  // clear the shared pick area WITHOUT wiping either tab's saved session
+  const keep=state.session; state.session=null;
+  resetAll();
+  state.session=keep;
+  // switch tab
+  state.mode=newMode;
+  $("modeSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on", x.getAttribute("data-mode")===newMode));
+  $("containerRow").classList.toggle("hidden", newMode!=="container");
   renderSavedLists(lastSavedArr);
+  // restore this tab's own open list (if any) and its photos
+  const sess = state.session ? state.session[newMode] : null;
+  const l = (sess && sess.listId) ? lastSavedArr.find(x=>x.id===sess.listId) : null;
+  if(l){
+    openList(l.id, l);
+    state.photos = (sess.photos||[]).slice();
+    renderThumbs();
+  } else if(sess){
+    sess.listId=null;
+  }
+}
+$("modeSeg").querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{
+  applyMode(b.getAttribute("data-mode"));
 }));
 $("pickContainer").addEventListener("input",()=>{
   state.container=$("pickContainer").value.trim();
