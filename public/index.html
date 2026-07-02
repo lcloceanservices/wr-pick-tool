@@ -435,7 +435,7 @@ function renderSavedLists(arr){
   const lbl=document.querySelector(".savedlbl");
   if(lbl) lbl.textContent = (state.mode==="container") ? "Containers (shared across all devices)" : "Consolidation lists (shared across all devices)";
   const groups={}, solo=[];
-  (arr||[]).forEach(l=>{ if(l.container){ (groups[l.container]=groups[l.container]||[]).push(l); } else solo.push(l); });
+  (arr||[]).forEach(l=>{ const c=String(l.container||"").trim(); if(c){ (groups[c]=groups[c]||[]).push(l); } else solo.push(l); });
   let html="";
   if(state.mode==="container"){
     // Container pre-load view: ONLY containers, nothing from the solo side.
