@@ -157,6 +157,7 @@
   .pick.flash{box-shadow:0 0 0 3px var(--teal);transition:box-shadow .2s;}
   #scPickLoad.drag{border:2px dashed var(--teal);background:#eef9fb;}
   .scpick-bar{display:flex;align-items:center;gap:12px;margin-top:12px;}
+  .progress-wrap.sc{margin:0 0 10px;border:1px solid var(--line);border-radius:12px;}
   .mv{display:flex;gap:10px;align-items:flex-start;border-top:1px solid var(--line);padding:10px 2px;}
   .mv:first-child{border-top:none;}
   .mv-ic{font-size:16px;flex:0 0 22px;text-align:center;}
@@ -244,8 +245,9 @@
         <input type="text" id="pickerName" placeholder="Your name" />
       </div>
     </div>
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
       <button class="btn ghost" id="completeBtn">Mark completed</button>
+      <button class="btn ghost" id="exportPdfBtn">⬇ Export PDF</button>
       <span id="completedBadge"></span>
     </div>
     <div class="progress-wrap">
@@ -363,11 +365,12 @@
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <button class="btn ghost mini" onclick="scClosePickList()">← Lists</button>
             <h2 style="margin:0;flex:1;min-width:0;" id="scPickName">Consolidation</h2>
+            <button class="btn ghost mini" onclick="scExportPDF()">⬇ PDF</button>
           </div>
           <div class="scfld" style="margin-top:12px;"><label>Picked by</label><input type="text" id="scPickerName" autocomplete="off" placeholder="Your name"></div>
-          <div class="scpick-bar"><div class="bar" style="flex:1;"><span id="scPickBar"></span></div><div class="progress-num" id="scPickNum">0 / 0</div></div>
           <div class="pickctl" style="margin-top:12px;"><input type="text" id="scPickSearch" autocomplete="off" placeholder="Scan a WR (Enter) or search…"><select id="scPickSort"><option value="loc">Walk route (location)</option><option value="wr">WR # ↑ (low to high)</option><option value="wrdesc">WR # ↓ (high to low)</option><option value="pallet">Pallet #</option><option value="list">List order</option></select></div>
         </div>
+        <div class="progress-wrap sc" id="scPickProg"><div class="bar"><span id="scPickBar"></span></div><div class="progress-num" id="scPickNum">0 / 0</div></div>
         <div class="card"><div id="scPickList"></div></div>
       </div>
     </div>
@@ -394,6 +397,8 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script>
 const state = { items: [], photos: [], slackConfigured: false, search: "", sortDir: "", listId: null, unsub: null, editing: null, deviceId: "", mode: "solo", container: "", completed: false, collapsed: {}, celebrated: false, openedAt: 0, session: { solo:{listId:null, photos:[]}, container:{listId:null, photos:[]} } };
 state.deviceId = (function(){ try{ let d=localStorage.getItem("wrpick_device"); if(!d){ d="dev-"+Math.random().toString(36).slice(2)+Date.now().toString(36); localStorage.setItem("wrpick_device", d);} return d; }catch(e){ return "dev-"+Date.now(); } })();
@@ -556,7 +561,7 @@ function applyRemote(prog){
     const p=prog[it.sid];
     const picked=!!(p&&p.picked);
     it.picked=picked;
-    it.by=picked?(p.by||""):""; it.byId=picked?(p.byId||""):"";
+    it.by=picked?(p.by||""):""; it.byId=picked?(p.byId||""):""; it.at=picked?(p.at||null):null;
     if(picked && String(it.sid)!==String(state.editing)){
       if(p.qty!==undefined && p.qty!==null) it.actualQty=p.qty;
       if(p.loc!==undefined) it.location=p.loc;
@@ -691,8 +696,8 @@ function updateProgress(){
   }
 }
 function positionProgress(){
-  const h=document.querySelector("header"), pw=document.querySelector(".progress-wrap");
-  if(h&&pw) pw.style.top=h.offsetHeight+"px";
+  const h=document.querySelector("header"); if(!h) return;
+  document.querySelectorAll(".progress-wrap").forEach(pw=>{ pw.style.top=h.offsetHeight+"px"; });
 }
 function confettiBurst(){
   const c=document.createElement("canvas");
@@ -708,6 +713,50 @@ function confettiBurst(){
       ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot); ctx.fillStyle=p.col; ctx.fillRect(-p.w/2,-p.h/2,p.w,p.h); ctx.restore(); });
     if(t<170){ requestAnimationFrame(frame); } else { c.remove(); }
   })();
+}
+
+/* ---------- PDF report export (both pickers) ---------- */
+function safeName(s){ return String(s||"list").replace(/[^\w]+/g,"_").replace(/^_+|_+$/g,"")||"list"; }
+function pdfReport(filename, title, meta, head, body){
+  const J = window.jspdf && window.jspdf.jsPDF;
+  if(!J){ toast("PDF tool still loading — try again in a moment"); return; }
+  const doc = new J({ unit:"pt", format:"a4" });
+  const M=40; let y=48;
+  doc.setFont("helvetica","bold"); doc.setFontSize(16); doc.setTextColor(24,41,77);
+  doc.text(String(title), M, y); y+=10;
+  doc.setDrawColor(82,179,192); doc.setLineWidth(2); doc.line(M, y, 555, y); y+=18;
+  doc.setFont("helvetica","normal"); doc.setFontSize(10); doc.setTextColor(90,100,115);
+  (meta||[]).forEach(line=>{ doc.text(String(line), M, y); y+=14; });
+  y+=6;
+  doc.autoTable({ head:[head], body:body, startY:y, margin:{left:M,right:M},
+    styles:{ fontSize:9, cellPadding:4, overflow:"linebreak" },
+    headStyles:{ fillColor:[24,41,77], textColor:255 },
+    alternateRowStyles:{ fillColor:[244,246,248] } });
+  doc.save(filename);
+}
+function exportPickPdf(){
+  if(!state.items.length){ toast("Load a list first"); return; }
+  const items=state.items.slice();
+  const total=items.length, done=items.filter(x=>x.picked).length;
+  const name=($("consolName").value.trim())||"Consolidation";
+  const meta=[];
+  if(state.container) meta.push("Container: "+state.container);
+  if($("blNum").value.trim()) meta.push("BL #: "+$("blNum").value.trim());
+  meta.push("Picked "+done+" of "+total+" lines"+(total>0&&done===total?" — COMPLETE":""));
+  meta.push("Generated "+new Date().toLocaleString());
+  const head=["#","WR","Description","Qty","Picked","By","Date / time"];
+  const body=items.map((it,i)=>[ String(i+1), it.wr||"", it.description||"", (it.actualQty===""||it.actualQty==null?"":String(it.actualQty)), (it.picked?"YES":"—"), (it.picked?(it.by||""):""), (it.picked&&it.at?new Date(it.at).toLocaleString():"") ]);
+  pdfReport("pick-"+safeName(name)+".pdf", "Pick Report — "+name, meta, head, body);
+}
+function scExportPDF(){
+  if(!scPickItems.length){ toast("Open a list first"); return; }
+  const name=($("scPickName")&&$("scPickName").textContent)||"Consolidation";
+  const items=scPickItems.slice();
+  const total=items.length, done=items.filter(it=>scPickState[it.sid]&&scPickState[it.sid].picked).length;
+  const meta=["The Sports Center", "Picked "+done+" of "+total+" lines"+(total>0&&done===total?" — COMPLETE":""), "Generated "+new Date().toLocaleString()];
+  const head=["#","WR","Description","Pallet","Location","Picked","By","Date / time"];
+  const body=items.map((it,i)=>{ const st=scPickState[it.sid]||{}; const loc=scResolveLoc(it.wr); return [ String(i+1), it.wr||"", it.description||"", (loc.palletStr||""), (loc.locStr||""), (st.picked?"YES":"—"), (st.picked?(st.by||""):""), (st.picked&&st.at?new Date(st.at).toLocaleString():"") ]; });
+  pdfReport("sportscenter-pick-"+safeName(name)+".pdf", "Pick Report — "+name, meta, head, body);
 }
 
 /* ---------- photos ---------- */
@@ -925,6 +974,7 @@ $("uploadPhotoBtn").addEventListener("click",()=>$("galleryInput").click());
 $("cameraInput").addEventListener("change",e=>{ addPhotoFiles(e.target.files); e.target.value=""; });
 $("galleryInput").addEventListener("change",e=>{ addPhotoFiles(e.target.files); e.target.value=""; });
 $("postBtn").addEventListener("click",post);
+$("exportPdfBtn").addEventListener("click", exportPickPdf);
 
 /* ---------- page routing (v3) ---------- */
 function showPage(name){
@@ -1153,7 +1203,7 @@ function renderMovements(){
 
 /* ---------- Sports Center picker ---------- */
 const SC_LOC_ORDER = (function(){ const o={}; SC_LOCATIONS.forEach((l,i)=>o[l]=i); return o; })();
-let scPickListId=null, scPickItems=[], scPickState={}, scPickLists={}, scPickUnsub=null;
+let scPickListId=null, scPickItems=[], scPickState={}, scPickLists={}, scPickUnsub=null, scPickCelebrated=false, scPickOpenedAt=0;
 
 function scPickerName(){ try{ return localStorage.getItem("sc_picker")||""; }catch(e){ return ""; } }
 function scResolveLoc(wr){
@@ -1183,15 +1233,16 @@ function scRenderPick(){
   if(!rows.length){ box.innerHTML='<div class="empty-note">'+(scPickItems.length?"No matching lines.":"No lines in this list.")+'</div>'; return; }
   box.innerHTML=rows.map(it=>{
     const st=scPickState[it.sid]||{}, picked=!!st.picked, loc=it._loc;
+    const other = picked && st.byId && st.byId!==state.deviceId;
     return '<div class="pick'+(picked?' done':'')+'" id="scrow_'+it.sid+'">'
       +'<div class="top">'
-      +'<div class="check" onclick="scTogglePick(\''+it.sid+'\')">'+(picked?'✓':'')+'</div>'
+      +'<div class="check'+(other?' lock':'')+'" onclick="scTogglePick(\''+it.sid+'\')">'+(picked?'✓':'')+'</div>'
       +'<div class="meta">'
       +'<div class="wrbig">'+escapeHtml(it.wr||"(no WR)")+'</div>'
       +(it.description?'<div class="desc">'+escapeHtml(it.description)+'</div>':'')
       +'<div class="sub">'+(loc.found?('<span class="tag pal">Pallet '+escapeHtml(loc.palletStr)+'</span>'+(loc.locStr?'<span class="tag loc">'+escapeHtml(loc.locStr)+'</span>':'')):'')+((it.expectedQty!=null&&it.expectedQty!=="")?(' Qty: '+escapeHtml(String(it.expectedQty))):'')+'</div>'
       +(!loc.found?'<div class="flag">⚠ Not found in Sports Center inventory</div>':(!loc.locStr?'<div class="flag">Pallet has no location set</div>':''))
-      +(picked?'<div class="claimlbl mine">✓ Picked'+(st.by?(' by '+escapeHtml(st.by)):'')+'</div>':'')
+      +(other?('<div class="claimlbl">🔒 Picked by '+escapeHtml(st.by||"another picker")+'</div>'):(picked?('<div class="claimlbl mine">✓ Picked'+(st.by?(' by '+escapeHtml(st.by)):'')+'</div>'):''))
       +'</div></div></div>';
   }).join("");
 }
@@ -1200,18 +1251,21 @@ function scPickProgress(){
   const bar=$("scPickBar"), num=$("scPickNum");
   if(bar) bar.style.width=(total?(done/total*100):0)+"%";
   if(num) num.textContent=done+" / "+total;
+  if(total>0 && done===total){ if(!scPickCelebrated && (Date.now()-(scPickOpenedAt||0)>1200)){ confettiBurst(); toast("All picked! 🎉"); } scPickCelebrated=true; }
+  else { scPickCelebrated=false; }
 }
 function scTogglePick(sid){
   const it=scPickItems.find(x=>String(x.sid)===String(sid)); if(!it) return;
-  const cur=scPickState[sid]&&scPickState[sid].picked;
-  scSetPick(it, !cur);
+  const st=scPickState[sid]||{};
+  if(st.picked && st.byId && st.byId!==state.deviceId){ toast("Already picked by "+(st.by||"another picker")); return; }
+  scSetPick(it, !st.picked);
 }
 function scSetPick(it, picked){
   if(scDB && scPickListId){
     const ref=scDB.ref(SC+"/pickstate/"+scPickListId+"/"+it.sid);
-    if(picked) ref.set({picked:true, by:scPickerName(), at:Date.now()}); else ref.remove();
+    if(picked) ref.set({picked:true, by:scPickerName(), byId:state.deviceId, at:Date.now()}); else ref.remove();
   } else {
-    scPickState[it.sid]= picked?{picked:true, by:scPickerName(), at:Date.now()}:null;
+    scPickState[it.sid]= picked?{picked:true, by:scPickerName(), byId:state.deviceId, at:Date.now()}:null;
     scRenderPick(); scPickProgress();
   }
 }
@@ -1220,7 +1274,9 @@ function scScan(){
   const v=box.value.trim(); if(!v) return;
   const it=scPickItems.find(x=>String(x.wr||"").trim().toLowerCase()===v.toLowerCase());
   if(!it){ toast("WR "+v+" is not on this list"); return; }
-  if(!(scPickState[it.sid]&&scPickState[it.sid].picked)) scSetPick(it, true);
+  const st=scPickState[it.sid]||{};
+  if(st.picked && st.byId && st.byId!==state.deviceId){ toast("WR "+v+" already picked by "+(st.by||"another picker")); }
+  else if(!st.picked){ scSetPick(it, true); }
   box.value=""; scRenderPick();
   setTimeout(()=>{ const el=$("scrow_"+it.sid); if(el){ el.scrollIntoView({behavior:"smooth",block:"center"}); el.classList.add("flash"); setTimeout(()=>el.classList.remove("flash"),1200); } },60);
 }
@@ -1249,8 +1305,10 @@ function scOpenPickList(listId, obj){
   if($("scPickName")) $("scPickName").textContent=(obj&&obj.name)||"Consolidation";
   if($("scPickerName")) $("scPickerName").value=scPickerName();
   if($("scPickSearch")) $("scPickSearch").value="";
+  scPickCelebrated=false; scPickOpenedAt=Date.now();
   $("scPickChooser").classList.add("hidden");
   $("scPickOpen").classList.remove("hidden");
+  positionProgress();
   scRenderPick(); scPickProgress();
   if(scDB && scPickListId){
     const ref=scDB.ref(SC+"/pickstate/"+scPickListId);
