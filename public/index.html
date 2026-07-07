@@ -1622,7 +1622,13 @@ function scInit(){
   const wr=$("scWr"); if(wr) wr.addEventListener("keydown", e=>{ if(e.key==="Enter"){ e.preventDefault(); $("scDesc").focus(); } });
   const is=$("scInvSearch"); if(is) is.addEventListener("input", renderInventory);
   const psr=$("scPalSearch"); if(psr) psr.addEventListener("input", ()=>{ scFocusNo=null; renderPallets(); });
-  const psc=$("scPalScan"); if(psc) psc.addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); const n=parseInt(String(psc.value).replace(/[^0-9]/g,""),10); psc.value=""; if(n) scFocusPallet(n); } });
+  const psc=$("scPalScan");
+  if(psc){
+    let pscT=null;
+    const pscGo=()=>{ const n=parseInt(String(psc.value).replace(/[^0-9]/g,""),10); psc.value=""; if(n) scFocusPallet(n); };
+    psc.addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); if(pscT){clearTimeout(pscT);pscT=null;} pscGo(); } });
+    psc.addEventListener("input",()=>{ if(pscT) clearTimeout(pscT); pscT=setTimeout(pscGo, 220); });  // acts even if the scanner sends no Enter
+  }
   const pf=$("scPalFilter"); if(pf) pf.addEventListener("change", ()=>{ scFocusNo=null; renderPallets(); });
   const mvs=$("scMoveSearch"); if(mvs) mvs.addEventListener("input", renderMovements);
   const mvf=$("scMoveFilter"); if(mvf) mvf.addEventListener("change", renderMovements);
