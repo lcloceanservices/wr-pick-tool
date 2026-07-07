@@ -1321,23 +1321,24 @@ function scDeletePallet(id){
 
 function printLabel(no, loc){
   const code="SCP-"+no;
-  const palUrl=location.origin+location.pathname+"?pallet="+encodeURIComponent(no);
-  const w=window.open("","_blank","width=460,height=360");
+  const palUrl=location.origin+location.pathname+"?p="+encodeURIComponent(no);
+  const w=window.open("","_blank","width=480,height=380");
   if(!w){ toast("Allow pop-ups to print labels"); return; }
   const locHtml = loc ? ('<div class="loc">'+escapeHtml(loc)+'</div>') : '';
   const html='<!DOCTYPE html><html><head><meta charset="utf-8"><title>Pallet '+no+'</title>'
     +'<style>@page{size:2in 1in;margin:0;}html,body{margin:0;padding:0;}'
-    +'.label{width:2in;height:1in;box-sizing:border-box;padding:3px 5px;font-family:Arial,Helvetica,sans-serif;display:flex;flex-direction:column;justify-content:space-between;}'
-    +'.top{display:flex;justify-content:space-between;align-items:flex-start;gap:4px;}'
-    +'.cap{font-size:6pt;letter-spacing:1px;text-transform:uppercase;color:#000;}'
-    +'.pno{font-size:20pt;font-weight:800;line-height:1;margin:1px 0;}'
-    +'.loc{font-size:9pt;font-weight:700;}'
-    +'#qr{width:.55in;height:.55in;flex:0 0 auto;}#qr img,#qr canvas{width:.55in!important;height:.55in!important;}'
-    +'svg#bc{width:1.9in;height:.24in;}</style>'
+    +'.label{width:2in;height:1in;box-sizing:border-box;padding:3px 4px;font-family:Arial,Helvetica,sans-serif;display:flex;align-items:center;gap:5px;}'
+    +'.qrbox{flex:0 0 auto;width:.86in;height:.86in;background:#fff;padding:3px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;}'
+    +'.qrbox canvas,.qrbox img{width:.8in!important;height:.8in!important;image-rendering:pixelated;image-rendering:crisp-edges;}'
+    +'.right{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;}'
+    +'.cap{font-size:5.5pt;letter-spacing:.4px;text-transform:uppercase;color:#000;}'
+    +'.pno{font-size:18pt;font-weight:800;line-height:1;margin:1px 0;}'
+    +'.loc{font-size:8.5pt;font-weight:700;}'
+    +'svg#bc{width:1.05in;height:.2in;margin-top:2px;}</style>'
     +'<scr'+'ipt src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></scr'+'ipt>'
     +'<scr'+'ipt src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></scr'+'ipt></head>'
-    +'<body><div class="label"><div class="top"><div><div class="cap">The Sports Center</div><div class="pno">#'+no+'</div>'+locHtml+'</div><div id="qr"></div></div><svg id="bc"></svg></div>'
-    +'<scr'+'ipt>window.onload=function(){try{JsBarcode("#bc",'+JSON.stringify(code)+',{format:"CODE128",displayValue:false,margin:0,height:26});}catch(e){}try{new QRCode(document.getElementById("qr"),{text:'+JSON.stringify(palUrl)+',width:52,height:52,correctLevel:QRCode.CorrectLevel.M});}catch(e){}setTimeout(function(){window.print();},550);};</scr'+'ipt>'
+    +'<body><div class="label"><div class="qrbox"><div id="qr"></div></div><div class="right"><div class="cap">The Sports Center</div><div class="pno">#'+no+'</div>'+locHtml+'<svg id="bc"></svg></div></div>'
+    +'<scr'+'ipt>window.onload=function(){try{JsBarcode("#bc",'+JSON.stringify(code)+',{format:"CODE128",displayValue:false,margin:0,height:24});}catch(e){}try{new QRCode(document.getElementById("qr"),{text:'+JSON.stringify(palUrl)+',width:320,height:320,correctLevel:QRCode.CorrectLevel.L});}catch(e){}setTimeout(function(){window.print();},650);};</scr'+'ipt>'
     +'</body></html>';
   w.document.write(html); w.document.close();
 }
@@ -1644,7 +1645,7 @@ positionProgress();
 window.addEventListener("resize", positionProgress);
 try{ if(localStorage.getItem("wrpick_scnav")==="1") setNavGroup(true); }catch(e){}
 try{ const lp=sessionStorage.getItem("wrpick_page"); if(lp && document.getElementById("page-"+lp)) showPage(lp); }catch(e){}
-try{ const pp=new URLSearchParams(location.search).get("pallet"); if(pp){ const n=parseInt(pp,10); if(n){ scPendingPallet=n; showPage("sc-pallets"); } } }catch(e){}
+try{ const usp=new URLSearchParams(location.search); const pp=usp.get("p")||usp.get("pallet"); if(pp){ const n=parseInt(pp,10); if(n){ scPendingPallet=n; showPage("sc-pallets"); } } }catch(e){}
 </script>
 </body>
 </html>
