@@ -1647,15 +1647,33 @@ try{ if(localStorage.getItem("wrpick_scnav")==="1") setNavGroup(true); }catch(e)
 try{ const lp=sessionStorage.getItem("wrpick_page"); if(lp && document.getElementById("page-"+lp)) showPage(lp); }catch(e){}
 try{ const usp=new URLSearchParams(location.search); const pp=usp.get("p")||usp.get("pallet"); if(pp){ const n=parseInt(pp,10); if(n){ scPendingPallet=n; showPage("sc-pallets"); } } }catch(e){}
 
-/* global pallet-barcode capture: scanning "SCP-<n>" anywhere jumps to (and shows only) that pallet */
+/* global pallet-barcode capture: scanning a pallet label jumps to (and shows only) that pallet.
+   Handles "SCP-<n>" labels anywhere, and bare-number labels while on the Pallets page. */
 (function(){
-  let buf="", ts=0;
+  let buf="", ts=0, timer=null;
+  function onPalletsPage(){ const pg=document.getElementById("page-sc-pallets"); return !!(pg && !pg.classList.contains("hidden")); }
+  function inOtherField(e){ const t=e&&e.target; return !!(t && (t.tagName==="INPUT"||t.tagName==="TEXTAREA"||t.tagName==="SELECT") && t.id!=="scPalScan"); }
+  function resolve(e){
+    const m=/SCP-?(\d+)/i.exec(buf);
+    if(m) return parseInt(m[1],10);
+    if(!inOtherField(e) && onPalletsPage() && /^\s*\d{1,6}\s*$/.test(buf)) return parseInt(buf.replace(/[^0-9]/g,""),10);
+    return null;
+  }
   document.addEventListener("keydown", function(e){
     const now=Date.now();
-    if(now-ts>120) buf="";   // reset between scans / slow human typing
+    if(now-ts>300) buf="";        // gap → new sequence (human typing resets)
     ts=now;
-    if(e.key==="Enter"){ const m=/SCP-?(\d+)/i.exec(buf); buf=""; if(m && typeof scFocusPallet==="function"){ e.preventDefault(); scFocusPallet(parseInt(m[1],10)); } return; }
-    if(e.key && e.key.length===1) buf+=e.key;
+    if(timer){ clearTimeout(timer); timer=null; }
+    if(e.key==="Enter" || e.key==="Tab"){
+      const n=resolve(e); buf="";
+      if(n!=null && typeof scFocusPallet==="function"){ e.preventDefault(); scFocusPallet(n); }
+      return;
+    }
+    if(e.key && e.key.length===1){
+      buf+=e.key; if(buf.length>24) buf=buf.slice(-24);
+      // fallback if the scanner sends no Enter/Tab suffix (SCP- only, to stay safe)
+      timer=setTimeout(function(){ const m=/SCP-?(\d+)/i.exec(buf); buf=""; if(m && typeof scFocusPallet==="function") scFocusPallet(parseInt(m[1],10)); }, 200);
+    }
   });
 })();
 </script>
