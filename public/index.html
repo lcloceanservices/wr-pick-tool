@@ -156,6 +156,7 @@
   .empty-note{color:var(--muted);font-size:13px;padding:8px 0;}
   .inv-row.hl{background:#e6f7ee;border-color:#1d9e75;}
   .pal-card.hl{box-shadow:0 0 0 2px #1d9e75;}
+  .pal-card.flash-card{box-shadow:0 0 0 3px var(--teal);transition:box-shadow .2s;}
   .pal-wrs .w.hl{background:#e6f7ee;border-radius:6px;margin:0 -6px;padding-left:6px;padding-right:6px;}
   .hl-badge{display:inline-block;font-size:10px;font-weight:700;color:#0f6b4f;background:#c9ecda;border-radius:5px;padding:1px 6px;margin-left:6px;}
   .pick.flash{box-shadow:0 0 0 3px var(--teal);transition:box-shadow .2s;}
@@ -346,6 +347,7 @@
           <h2 style="margin:0;">Pallets</h2>
           <span class="nav-badge" id="scPalCount" style="background:#eef2f5;color:var(--muted);">0</span>
         </div>
+        <div class="scfld"><input type="text" id="scPalScan" autocomplete="off" placeholder="Scan a pallet label to jump to it…"></div>
         <div class="pickctl">
           <input type="text" id="scPalSearch" autocomplete="off" placeholder="Search pallet #, location, or WR…">
           <select id="scPalFilter"><option value="">All pallets</option><option value="active">Active only</option><option value="empty">Empty only</option></select>
@@ -1267,19 +1269,24 @@ function renderPallets(){
     const items=contentsForPallet(p.id), tot=palletTotals(p.id), empty=p.status==="empty";
     const anyHl=items.some(c=>scHighlight[scWrKey(c.wr)]);
     const wrHtml=items.length ? items.map(c=>'<div class="w'+(scHighlight[scWrKey(c.wr)]?' hl':'')+'"><span>'+escapeHtml(c.wr||"")+(c.description?' — '+escapeHtml(c.description):'')+'</span><span style="white-space:nowrap;color:var(--muted);">'+qtyStr(c)+'</span></div>').join("") : '<div class="empty-note">No WRs on this pallet.</div>';
-    return '<div class="pal-card'+(empty?' empty':'')+(anyHl?' hl':'')+'">'
+    return '<div class="pal-card'+(empty?' empty':'')+(anyHl?' hl':'')+'" data-pno="'+p.no+'">'
       +'<div class="pal-top"><span class="pal-no">Pallet #'+p.no+'</span>'
       +'<input class="pal-loc-sel mini" list="scLocList" title="Location" placeholder="location" value="'+escapeHtml(p.location||"")+'" onchange="scSetLocation(\''+p.id+'\',this.value.trim())">'
       +'<span class="pal-status '+(empty?'empty':'active')+'">'+(empty?'Empty':'Active')+'</span>'
       +'<span style="margin-left:auto;font-size:12px;color:var(--muted);">'+items.length+' WR'+(items.length===1?'':'s')+' · '+totalsStr(tot)+'</span></div>'
       +'<div class="pal-wrs">'+wrHtml+'</div>'
       +'<div class="pal-actions">'
-      +'<button class="btn navy mini" onclick="printLabel('+p.no+')">🖨 Print label</button>'
+      +'<button class="btn navy mini" onclick="printLabel('+p.no+',\''+String(p.location||"").replace(/[^A-Za-z0-9 _-]/g,"")+'\')">🖨 Print label</button>'
       +'<button class="btn ghost mini" onclick="scToggleEmpty(\''+p.id+'\')">'+(empty?'Mark active':'Mark empty')+'</button>'
       +'<button class="btn ghost mini" onclick="scRenamePallet(\''+p.id+'\')">Edit #</button>'
       +'<button class="btn ghost mini" onclick="scDeletePallet(\''+p.id+'\')">🗑 Delete</button>'
       +'</div></div>';
   }).join("");
+  if(scPendingPallet!=null){ const c=box.querySelector('.pal-card[data-pno="'+scPendingPallet+'"]'); if(c){ const t=scPendingPallet; scPendingPallet=null; setTimeout(()=>scFocusPallet(t),150); } }
+}
+function scFocusPallet(no){
+  showPage("sc-pallets");
+  setTimeout(()=>{ const c=document.querySelector('.pal-card[data-pno="'+no+'"]'); if(c){ c.scrollIntoView({behavior:"smooth",block:"center"}); c.classList.add("flash-card"); setTimeout(()=>c.classList.remove("flash-card"),1400); } else { toast("Pallet #"+no+" not found"); } }, 80);
 }
 function scSetLocation(id,loc){ const p=scPallets[id]; const from=p?(p.location||""):""; if(from===loc){ return; } scDB.ref(SC+"/pallets/"+id).update({location:loc, updatedAt:Date.now()}); scLogMove({ type:"pallet_move", palletNo:(p?p.no:null), fromLoc:from, toLoc:loc }); toast(loc?("Moved to "+loc):"Location cleared"); }
 function scToggleEmpty(id){ const p=scPallets[id]; if(!p) return; const ns=(p.status==="empty")?"active":"empty"; scDB.ref(SC+"/pallets/"+id).update({status:ns, updatedAt:Date.now()}); scLogMove({ type:(ns==="empty"?"pallet_empty":"pallet_active"), palletNo:p.no }); }
@@ -1301,19 +1308,25 @@ function scDeletePallet(id){
   scLogMove({ type:"delete_pallet", palletNo:(p?p.no:null) });
 }
 
-function printLabel(no){
-  const code=String(no);
-  const w=window.open("","_blank","width=420,height=320");
+function printLabel(no, loc){
+  const code="SCP-"+no;
+  const palUrl=location.origin+location.pathname+"?pallet="+encodeURIComponent(no);
+  const w=window.open("","_blank","width=460,height=360");
   if(!w){ toast("Allow pop-ups to print labels"); return; }
+  const locHtml = loc ? ('<div class="loc">'+escapeHtml(loc)+'</div>') : '';
   const html='<!DOCTYPE html><html><head><meta charset="utf-8"><title>Pallet '+no+'</title>'
     +'<style>@page{size:2in 1in;margin:0;}html,body{margin:0;padding:0;}'
-    +'.label{width:2in;height:1in;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:Arial,Helvetica,sans-serif;box-sizing:border-box;padding:2px;}'
-    +'.cap{font-size:7pt;letter-spacing:1px;text-transform:uppercase;color:#000;}'
-    +'.pno{font-size:26pt;font-weight:800;line-height:1;margin:1px 0 2px;}'
-    +'svg{width:1.9in;height:0.42in;}</style>'
-    +'<scr'+'ipt src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></scr'+'ipt></head>'
-    +'<body><div class="label"><div class="cap">The Sports Center &middot; Pallet</div><div class="pno">#'+no+'</div><svg id="bc"></svg></div>'
-    +'<scr'+'ipt>window.onload=function(){try{JsBarcode("#bc","'+code+'",{format:"CODE128",displayValue:false,margin:0,height:42});}catch(e){}setTimeout(function(){window.print();},350);};</scr'+'ipt>'
+    +'.label{width:2in;height:1in;box-sizing:border-box;padding:3px 5px;font-family:Arial,Helvetica,sans-serif;display:flex;flex-direction:column;justify-content:space-between;}'
+    +'.top{display:flex;justify-content:space-between;align-items:flex-start;gap:4px;}'
+    +'.cap{font-size:6pt;letter-spacing:1px;text-transform:uppercase;color:#000;}'
+    +'.pno{font-size:20pt;font-weight:800;line-height:1;margin:1px 0;}'
+    +'.loc{font-size:9pt;font-weight:700;}'
+    +'#qr{width:.55in;height:.55in;flex:0 0 auto;}#qr img,#qr canvas{width:.55in!important;height:.55in!important;}'
+    +'svg#bc{width:1.9in;height:.24in;}</style>'
+    +'<scr'+'ipt src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></scr'+'ipt>'
+    +'<scr'+'ipt src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></scr'+'ipt></head>'
+    +'<body><div class="label"><div class="top"><div><div class="cap">The Sports Center</div><div class="pno">#'+no+'</div>'+locHtml+'</div><div id="qr"></div></div><svg id="bc"></svg></div>'
+    +'<scr'+'ipt>window.onload=function(){try{JsBarcode("#bc",'+JSON.stringify(code)+',{format:"CODE128",displayValue:false,margin:0,height:26});}catch(e){}try{new QRCode(document.getElementById("qr"),{text:'+JSON.stringify(palUrl)+',width:52,height:52,correctLevel:QRCode.CorrectLevel.M});}catch(e){}setTimeout(function(){window.print();},550);};</scr'+'ipt>'
     +'</body></html>';
   w.document.write(html); w.document.close();
 }
@@ -1363,7 +1376,7 @@ function renderMovements(){
 /* ---------- Sports Center picker ---------- */
 const SC_LOC_ORDER = (function(){ const o={}; SC_LOCATIONS.forEach((l,i)=>o[l]=i); return o; })();
 let scPickListId=null, scPickItems=[], scPickState={}, scPickLists={}, scPickUnsub=null, scPickCelebrated=false, scPickOpenedAt=0;
-let scHighlight={}, scArLists={};
+let scHighlight={}, scArLists={}, scPendingPallet=null;
 function scWrKey(wr){ return String(wr||"").trim().toLowerCase().replace(/[.#$/\[\]]/g,"_")||"_"; }
 
 function scPickerName(){ try{ return localStorage.getItem("sc_picker")||""; }catch(e){ return ""; } }
@@ -1597,6 +1610,7 @@ function scInit(){
   const wr=$("scWr"); if(wr) wr.addEventListener("keydown", e=>{ if(e.key==="Enter"){ e.preventDefault(); $("scDesc").focus(); } });
   const is=$("scInvSearch"); if(is) is.addEventListener("input", renderInventory);
   const psr=$("scPalSearch"); if(psr) psr.addEventListener("input", renderPallets);
+  const psc=$("scPalScan"); if(psc) psc.addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); const n=parseInt(String(psc.value).replace(/[^0-9]/g,""),10); psc.value=""; if(n) scFocusPallet(n); } });
   const pf=$("scPalFilter"); if(pf) pf.addEventListener("change", renderPallets);
   const mvs=$("scMoveSearch"); if(mvs) mvs.addEventListener("input", renderMovements);
   const mvf=$("scMoveFilter"); if(mvf) mvf.addEventListener("change", renderMovements);
@@ -1619,6 +1633,7 @@ positionProgress();
 window.addEventListener("resize", positionProgress);
 try{ if(localStorage.getItem("wrpick_scnav")==="1") setNavGroup(true); }catch(e){}
 try{ const lp=sessionStorage.getItem("wrpick_page"); if(lp && document.getElementById("page-"+lp)) showPage(lp); }catch(e){}
+try{ const pp=new URLSearchParams(location.search).get("pallet"); if(pp){ const n=parseInt(pp,10); if(n){ scPendingPallet=n; showPage("sc-pallets"); } } }catch(e){}
 </script>
 </body>
 </html>
