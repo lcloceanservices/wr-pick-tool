@@ -1646,6 +1646,18 @@ window.addEventListener("resize", positionProgress);
 try{ if(localStorage.getItem("wrpick_scnav")==="1") setNavGroup(true); }catch(e){}
 try{ const lp=sessionStorage.getItem("wrpick_page"); if(lp && document.getElementById("page-"+lp)) showPage(lp); }catch(e){}
 try{ const usp=new URLSearchParams(location.search); const pp=usp.get("p")||usp.get("pallet"); if(pp){ const n=parseInt(pp,10); if(n){ scPendingPallet=n; showPage("sc-pallets"); } } }catch(e){}
+
+/* global pallet-barcode capture: scanning "SCP-<n>" anywhere jumps to (and shows only) that pallet */
+(function(){
+  let buf="", ts=0;
+  document.addEventListener("keydown", function(e){
+    const now=Date.now();
+    if(now-ts>120) buf="";   // reset between scans / slow human typing
+    ts=now;
+    if(e.key==="Enter"){ const m=/SCP-?(\d+)/i.exec(buf); buf=""; if(m && typeof scFocusPallet==="function"){ e.preventDefault(); scFocusPallet(parseInt(m[1],10)); } return; }
+    if(e.key && e.key.length===1) buf+=e.key;
+  });
+})();
 </script>
 </body>
 </html>
