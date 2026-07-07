@@ -320,11 +320,12 @@
         </div>
         <div class="row">
           <div class="scfld"><label>Pallet</label><select id="scPalletSel"><option value="new">➕ New pallet</option></select></div>
+          <div class="scfld" id="scNoWrap"><label>New pallet # (blank = auto)</label><input type="number" id="scNewNo" min="1" inputmode="numeric" autocomplete="off" placeholder="auto"></div>
           <div class="scfld" id="scLocWrap"><label>Location for new pallet</label><input type="text" id="scLoc" list="scLocList" autocomplete="off" placeholder="e.g. C1-2"></div>
         </div>
         <button class="btn primary block" id="scReceiveBtn">Receive onto pallet</button>
         <div id="scReceiveBanner"></div>
-        <div class="hint">New pallets are numbered automatically. Scanning a WR fills the box and jumps to Description.</div>
+        <div class="hint">Leave “New pallet #” blank to auto-number, or type a number to reuse one (e.g. #1 after deleting it). Scanning a WR fills the box and jumps to Description.</div>
       </div>
       <div class="card">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
@@ -1161,7 +1162,7 @@ function fillLocationDatalist(){
   const dl=$("scLocList"); if(!dl) return;
   dl.innerHTML=SC_LOCATIONS.map(l=>'<option value="'+l+'"></option>').join("");
 }
-function toggleReceiveLoc(){ const sel=$("scPalletSel"), w=$("scLocWrap"); if(sel&&w) w.style.display=(sel.value==="new")?"":"none"; }
+function toggleReceiveLoc(){ const sel=$("scPalletSel"); if(!sel) return; const isNew=(sel.value==="new"); if($("scLocWrap")) $("scLocWrap").style.display=isNew?"":"none"; if($("scNoWrap")) $("scNoWrap").style.display=isNew?"":"none"; }
 function refreshPalletSelect(){
   const sel=$("scPalletSel"); if(!sel) return;
   const keep=sel.value;
@@ -1195,11 +1196,19 @@ function scReceive(){
   };
   if(target==="new"){
     const loc=$("scLoc").value;
-    scNextPalletNo(no=>{
-      if(no==null){ banner("scReceiveBanner","Couldn't allocate a pallet number — try again.","err"); return; }
+    const manual=parseInt(($("scNewNo")&&$("scNewNo").value)||"",10);
+    const createWith=(no)=>{
       const ref=scDB.ref(SC+"/pallets").push();
-      ref.set({ no:no, location:loc, status:"active", createdAt:Date.now(), createdBy:by, updatedAt:Date.now() }, ()=>{ addContent(ref.key, {no:no, loc:loc}); $("scPalletSel").value="new"; });
-    });
+      ref.set({ no:no, location:loc, status:"active", createdAt:Date.now(), createdBy:by, updatedAt:Date.now() }, ()=>{ addContent(ref.key, {no:no, loc:loc}); if($("scNewNo")) $("scNewNo").value=""; $("scPalletSel").value="new"; });
+      if(no>scSeq) scDB.ref(SC+"/counters/palletSeq").set(no); // keep auto-numbering above any manual number
+    };
+    if(manual && manual>0){
+      const clash=Object.keys(scPallets).some(k=>Number(scPallets[k].no)===manual);
+      if(clash && !confirm("Pallet #"+manual+" already exists. Create another pallet with the same number?")) return;
+      createWith(manual);
+    } else {
+      scNextPalletNo(no=>{ if(no==null){ banner("scReceiveBanner","Couldn't allocate a pallet number — try again.","err"); return; } createWith(no); });
+    }
   } else { const tp=palletById(target); addContent(target, {no:(tp?tp.no:null), loc:(tp?tp.location:"")}); }
 }
 
