@@ -168,6 +168,11 @@
   .mv-b{flex:1;min-width:0;}
   .mv-t{font-size:14px;color:var(--text);word-break:break-word;}
   .mv-s{font-size:12px;color:var(--muted);margin-top:2px;}
+  .mv-det > summary{cursor:pointer;font-size:14px;color:var(--text);list-style:none;}
+  .mv-det > summary::-webkit-details-marker{display:none;}
+  .mv-det > summary::before{content:"▸ ";color:var(--teal-d);font-size:11px;}
+  .mv-det[open] > summary::before{content:"▾ ";}
+  .mv-list{font-size:13px;color:var(--text);margin:6px 0 0 14px;line-height:1.5;word-break:break-word;}
   @media(max-width:860px){
     .menu-btn{display:inline-flex;align-items:center;justify-content:center;}
     .sidebar{position:fixed;top:0;left:0;height:100vh;z-index:30;transform:translateX(-100%);transition:transform .22s;box-shadow:2px 0 16px rgba(0,0,0,.2);padding-top:16px;}
@@ -359,7 +364,7 @@
         </div>
         <div class="pickctl">
           <input type="text" id="scMoveSearch" autocomplete="off" placeholder="Search WR, pallet #, or location…">
-          <select id="scMoveFilter"><option value="">All types</option><option value="receive">Receipts</option><option value="pallet_move">Pallet moves</option><option value="wr_move">WR moves</option><option value="other">Status / deletes</option></select>
+          <select id="scMoveFilter"><option value="">All types</option><option value="receive">Receipts</option><option value="pallet_move">Pallet moves</option><option value="wr_move">WR moves</option><option value="shipment">Shipments / restores</option><option value="other">Status / deletes</option></select>
         </div>
         <div id="scMoveList"></div>
       </div>
@@ -1328,10 +1333,22 @@ function renderMovements(){
   const filt=($("scMoveFilter")&&$("scMoveFilter").value)||"";
   let arr=Object.keys(scMoves).map(k=>Object.assign({id:k}, scMoves[k])).sort((a,b)=>(b.at||0)-(a.at||0));
   const cnt=$("scMoveCount"); if(cnt) cnt.textContent=arr.length;
-  if(filt) arr=arr.filter(m=> filt==="other" ? ["pallet_empty","pallet_active","delete_pallet","delete_wr"].indexOf(m.type)>=0 : m.type===filt );
+  if(filt) arr=arr.filter(m=> filt==="other" ? ["pallet_empty","pallet_active","delete_pallet","delete_wr","shipped"].indexOf(m.type)>=0 : (filt==="shipment" ? (m.type==="shipment"||m.type==="restored") : m.type===filt) );
   if(q) arr=arr.filter(m=> [m.wr,("#"+(m.palletNo||"")),("#"+(m.fromPalletNo||"")),("#"+(m.toPalletNo||"")),m.fromLoc,m.toLoc,m.type,m.by].join(" ").toLowerCase().indexOf(q)>=0 );
   if(!arr.length){ box.innerHTML='<div class="empty-note">'+(Object.keys(scMoves).length?"No matching movements.":"No movements logged yet.")+'</div>'; return; }
-  box.innerHTML=arr.map(m=>{ const t=scMoveText(m); return '<div class="mv"><span class="mv-ic">'+t.ico+'</span><div class="mv-b"><div class="mv-t">'+t.txt+'</div><div class="mv-s">'+timeAgo(m.at)+(m.by?(' · '+escapeHtml(m.by)):'')+'</div></div></div>'; }).join("");
+  box.innerHTML=arr.map(m=>{
+    if(m.type==="shipment" || m.type==="restored"){
+      const isShip=m.type==="shipment", ico=isShip?"🚚":"↩", verb=isShip?"Shipped out":"Restored";
+      const wrs=(m.wrs||[]), pls=(m.pallets||[]);
+      const tag = m.blNum? ("BL #"+escapeHtml(m.blNum)) : (m.reference? escapeHtml(m.reference) : (m.name? escapeHtml(m.name) : "pick list"));
+      const label = '<b>'+verb+'</b> on '+tag+' &mdash; '+wrs.length+' WR'+(wrs.length===1?'':'s');
+      let body='<div class="mv-list"><b>WRs:</b> '+(wrs.length? wrs.map(w=>escapeHtml(w)).join(", ") : "none")+'</div>';
+      if(isShip && pls.length) body+='<div class="mv-list"><b>Pallets marked empty:</b> '+pls.map(n=>"#"+escapeHtml(String(n))).join(", ")+'</div>';
+      return '<div class="mv"><span class="mv-ic">'+ico+'</span><div class="mv-b"><details class="mv-det"><summary>'+label+'</summary>'+body+'</details><div class="mv-s">'+timeAgo(m.at)+(m.by?(' · '+escapeHtml(m.by)):'')+'</div></div></div>';
+    }
+    const t=scMoveText(m);
+    return '<div class="mv"><span class="mv-ic">'+t.ico+'</span><div class="mv-b"><div class="mv-t">'+t.txt+'</div><div class="mv-s">'+timeAgo(m.at)+(m.by?(' · '+escapeHtml(m.by)):'')+'</div></div></div>';
+  }).join("");
 }
 
 /* ---------- Sports Center picker ---------- */
@@ -1488,20 +1505,19 @@ function scSubmitPick(){
   if(!confirm("Submit this pick?\n\n"+done+" of "+total+" lines picked. The picked WRs will be REMOVED from inventory and the list archived.")) return;
   const bl=($("scPickBL")&&$("scPickBL").value.trim())||"", ct=($("scPickCont")&&$("scPickCont").value.trim())||"";
   const items=scPickItems.map(it=>{ const st=scPickState[it.sid]||{}; const loc=scResolveLoc(it.wr); return { wr:it.wr||"", description:it.description||"", expectedQty:(it.expectedQty!=null?it.expectedQty:null), pallet:(loc.palletStr||""), location:(loc.locStr||""), picked:!!st.picked, by:(st.by||""), at:(st.at||null) }; });
-  scDB.ref(SC+"/archive").push({ reference:ref, name:name, blNum:bl, container:ct, at:Date.now(), total:total, done:done, items:items });
-  // which WRs were picked
   const pickedWRs={}; scPickItems.forEach(it=>{ if(scPickState[it.sid]&&scPickState[it.sid].picked){ pickedWRs[String(it.wr||"").trim().toLowerCase()]=it.wr; } });
-  const updates={}, affected={};
-  Object.keys(scContents).forEach(cid=>{ const c=scContents[cid]; const key=String(c.wr||"").trim().toLowerCase(); if(pickedWRs[key]){ updates[SC+"/contents/"+cid]=null; if(c.palletId) affected[c.palletId]=true; } });
+  const updates={}, affected={}, removed=[];
+  Object.keys(scContents).forEach(cid=>{ const c=scContents[cid]; const key=String(c.wr||"").trim().toLowerCase(); if(pickedWRs[key]){ updates[SC+"/contents/"+cid]=null; removed.push({ wr:c.wr||"", description:c.description||"", cartons:(Number(c.cartons)||0), unit:(c.unit||"ctn"), palletId:(c.palletId||"") }); if(c.palletId) affected[c.palletId]=true; } });
+  const emptiedIds=[], emptiedNos=[];
+  Object.keys(affected).forEach(pid=>{
+    const stillThere=Object.keys(scContents).some(cid=>scContents[cid] && scContents[cid].palletId===pid && !pickedWRs[String(scContents[cid].wr||"").trim().toLowerCase()]);
+    if(!stillThere && scPallets[pid] && scPallets[pid].status!=="empty"){ emptiedIds.push(pid); emptiedNos.push(scPallets[pid].no); updates[SC+"/pallets/"+pid+"/status"]="empty"; updates[SC+"/pallets/"+pid+"/updatedAt"]=Date.now(); }
+  });
   Object.keys(pickedWRs).forEach(k=>{ updates[SC+"/highlight/"+scWrKey(pickedWRs[k])]=null; });
   if(scPickListId){ updates[SC+"/picklists/"+scPickListId]=null; updates[SC+"/pickstate/"+scPickListId]=null; }
-  scDB.ref().update(updates, ()=>{
-    Object.keys(affected).forEach(pid=>{
-      const stillThere=Object.keys(scContents).some(cid=>scContents[cid] && scContents[cid].palletId===pid && !pickedWRs[String(scContents[cid].wr||"").trim().toLowerCase()]);
-      if(!stillThere && scPallets[pid] && scPallets[pid].status!=="empty"){ scDB.ref(SC+"/pallets/"+pid).update({status:"empty", updatedAt:Date.now()}); scLogMove({type:"pallet_empty", palletNo:scPallets[pid].no}); }
-    });
-  });
-  Object.keys(pickedWRs).forEach(k=>{ scLogMove({ type:"shipped", wr:pickedWRs[k] }); });
+  scDB.ref(SC+"/archive").push({ reference:ref, name:name, blNum:bl, container:ct, at:Date.now(), total:total, done:done, items:items, removed:removed, emptied:emptiedIds });
+  scDB.ref().update(updates);
+  scLogMove({ type:"shipment", blNum:bl, reference:ref, name:name, wrs:Object.keys(pickedWRs).map(k=>pickedWRs[k]), pallets:emptiedNos });
   toast("Submitted & archived ✓");
   scClosePickList();
   showPage("sc-archive");
@@ -1532,12 +1548,17 @@ function scExportArchive(id){
 function scDeleteArchive(id){ if(confirm("Delete this archived pick permanently?")) scDB.ref(SC+"/archive/"+id).remove(); }
 function scUnarchive(id){
   const a=scArLists[id]; if(!a || !scDB) return;
-  if(!confirm("Make “"+(a.reference||a.name||"this list")+"” an active pick list again?\n\nNote: WRs already shipped out won't reappear in inventory — the list comes back with its checkmarks.")) return;
+  const back=(a.removed||[]).length;
+  if(!confirm("Make “"+(a.reference||a.name||"this list")+"” an active pick list again?"+(back?("\n\n"+back+" picked WR(s) will be put back into Inventory on their pallets, and any pallet emptied by this pick will be reactivated."):""))) return;
   const items=(a.items||[]).map((it,i)=>({ sid:i, wr:it.wr||"", description:it.description||"", expectedQty:(it.expectedQty==null?"":it.expectedQty) }));
   const nref=scDB.ref(SC+"/picklists").push({ name:(a.name||a.reference||"Consolidation"), reference:a.reference||"", blNum:a.blNum||"", container:a.container||"", createdAt:Date.now(), items:items }), newId=nref.key;
   const prog={};
   (a.items||[]).forEach((it,i)=>{ if(it.picked){ prog[i]={ picked:true, by:it.by||"", at:it.at||Date.now() }; } });
   if(Object.keys(prog).length) scDB.ref(SC+"/pickstate/"+newId).set(prog);
+  // put the shipped-out WRs back into inventory on their original pallets
+  (a.removed||[]).forEach(rc=>{ scDB.ref(SC+"/contents").push({ wr:rc.wr||"", description:rc.description||"", cartons:(Number(rc.cartons)||0), unit:(rc.unit||"ctn"), palletId:(rc.palletId||""), addedAt:Date.now(), addedBy:"restored" }); });
+  (a.emptied||[]).forEach(pid=>{ if(scPallets[pid]) scDB.ref(SC+"/pallets/"+pid).update({status:"active", updatedAt:Date.now()}); });
+  if(back) scLogMove({ type:"restored", blNum:a.blNum||"", reference:a.reference||"", name:a.name||"", wrs:(a.removed||[]).map(r=>r.wr) });
   scDB.ref(SC+"/archive/"+id).remove();
   toast("Restored ✓"); showPage("sc-picker");
 }
