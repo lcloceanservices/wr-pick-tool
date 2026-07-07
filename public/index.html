@@ -838,7 +838,7 @@ function renderPickingArchive(){
   box.innerHTML=arr.map(a=>{
     const title=a.reference||a.name||"Consolidation";
     const sub=[(a.done+"/"+a.total+" picked"), a.blNum?("BL "+a.blNum):"", a.container?("Container "+a.container):"", timeAgo(a.at)].filter(Boolean).join(" · ");
-    return '<div class="saved"><div class="saved-meta"><div class="saved-name">'+escapeHtml(title)+'</div><div class="saved-sub">'+escapeHtml(sub)+'</div></div><button class="btn ghost" onclick="exportArchivePdf(\''+a.id+'\')">⬇ PDF</button><button class="btn-x" onclick="deleteArchive(\''+a.id+'\')" title="Delete">×</button></div>';
+    return '<div class="saved"><div class="saved-meta"><div class="saved-name">'+escapeHtml(title)+'</div><div class="saved-sub">'+escapeHtml(sub)+'</div></div><button class="btn ghost" onclick="exportArchivePdf(\''+a.id+'\')">⬇ PDF</button><button class="btn ghost" onclick="unarchiveRegular(\''+a.id+'\')">↩ Restore</button><button class="btn-x" onclick="deleteArchive(\''+a.id+'\')" title="Delete">×</button></div>';
   }).join("");
 }
 function exportArchivePdf(id){
@@ -851,6 +851,18 @@ function exportArchivePdf(id){
   pdfReport("pick-"+safeName(a.reference||a.name)+".pdf", "Pick Report — "+(a.reference||a.name||"Consolidation"), meta, ["#","WR","Description","Qty","Picked","By","Date / time"], body);
 }
 function deleteArchive(id){ if(confirm("Delete this archived pick permanently?")) listDB.ref("archive/"+id).remove(); }
+function unarchiveRegular(id){
+  const a=arLists[id]; if(!a || !listDB) return;
+  if(!confirm("Make “"+(a.reference||a.name||"this list")+"” active again?")) return;
+  const items=(a.items||[]).map((it,i)=>({ sid:i, wr:it.wr||"", description:it.description||"", expectedQty:(it.expectedQty==null?"":it.expectedQty), location:it.location||"" }));
+  const rec={ name:(a.name||a.reference||"Consolidation"), items:items, container:a.container||"", completed:false, reference:a.reference||"", blNum:a.blNum||"", createdAt:Date.now() };
+  const nref=listDB.ref("picklists").push(rec), newId=nref.key;
+  const prog={};
+  (a.items||[]).forEach((it,i)=>{ if(it.picked){ prog[i]={ picked:true, by:it.by||"", qty:(it.actualQty==null?null:it.actualQty), loc:it.location||"", at:it.at||Date.now() }; } });
+  if(Object.keys(prog).length) listDB.ref("pickstate/"+newId).set(prog);
+  listDB.ref("archive/"+id).remove();
+  toast("Restored to active lists ✓"); showPage("picking");
+}
 
 /* ---------- container: export all consolidations as one PDF (by BL) ---------- */
 function scExportContainerAll(container){
@@ -1505,7 +1517,7 @@ function renderScArchive(){
   box.innerHTML=arr.map(a=>{
     const title=a.reference||a.name||"Consolidation";
     const sub=[(a.done+"/"+a.total+" picked"), timeAgo(a.at)].filter(Boolean).join(" · ");
-    return '<div class="saved"><div class="saved-meta"><div class="saved-name">'+escapeHtml(title)+'</div><div class="saved-sub">'+escapeHtml(sub)+'</div></div><button class="btn ghost" onclick="scExportArchive(\''+a.id+'\')">⬇ PDF</button><button class="btn-x" onclick="scDeleteArchive(\''+a.id+'\')" title="Delete">×</button></div>';
+    return '<div class="saved"><div class="saved-meta"><div class="saved-name">'+escapeHtml(title)+'</div><div class="saved-sub">'+escapeHtml(sub)+'</div></div><button class="btn ghost" onclick="scExportArchive(\''+a.id+'\')">⬇ PDF</button><button class="btn ghost" onclick="scUnarchive(\''+a.id+'\')">↩ Restore</button><button class="btn-x" onclick="scDeleteArchive(\''+a.id+'\')" title="Delete">×</button></div>';
   }).join("");
 }
 function scExportArchive(id){
@@ -1518,6 +1530,17 @@ function scExportArchive(id){
   pdfReport("sportscenter-pick-"+safeName(a.reference||a.name)+".pdf", "Pick Report — "+(a.reference||a.name||"Consolidation"), meta, head, body);
 }
 function scDeleteArchive(id){ if(confirm("Delete this archived pick permanently?")) scDB.ref(SC+"/archive/"+id).remove(); }
+function scUnarchive(id){
+  const a=scArLists[id]; if(!a || !scDB) return;
+  if(!confirm("Make “"+(a.reference||a.name||"this list")+"” an active pick list again?\n\nNote: WRs already shipped out won't reappear in inventory — the list comes back with its checkmarks.")) return;
+  const items=(a.items||[]).map((it,i)=>({ sid:i, wr:it.wr||"", description:it.description||"", expectedQty:(it.expectedQty==null?"":it.expectedQty) }));
+  const nref=scDB.ref(SC+"/picklists").push({ name:(a.name||a.reference||"Consolidation"), reference:a.reference||"", blNum:a.blNum||"", container:a.container||"", createdAt:Date.now(), items:items }), newId=nref.key;
+  const prog={};
+  (a.items||[]).forEach((it,i)=>{ if(it.picked){ prog[i]={ picked:true, by:it.by||"", at:it.at||Date.now() }; } });
+  if(Object.keys(prog).length) scDB.ref(SC+"/pickstate/"+newId).set(prog);
+  scDB.ref(SC+"/archive/"+id).remove();
+  toast("Restored ✓"); showPage("sc-picker");
+}
 function scPickWire(){
   const up=$("scPickUploadBtn"); if(up) up.addEventListener("click",()=>$("scPickFile").click());
   const pf=$("scPickFile"); if(pf) pf.addEventListener("change",e=>{ const f=e.target.files&&e.target.files[0]; if(f) scIngest(f); e.target.value=""; });
