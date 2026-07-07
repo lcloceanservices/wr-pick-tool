@@ -182,6 +182,29 @@
     .sidebar.open{transform:none;}
     .backdrop.show{display:block;}
   }
+  /* ===== phone layout (v3) ===== */
+  @media(max-width:600px){
+    .wrap{padding:12px;}
+    .page-head{padding:14px 12px 2px;}
+    .page-head h1{font-size:18px;}
+    .card{padding:13px;}
+    .row{gap:8px;}
+    .row > *{min-width:100%;}                         /* stack form fields full-width */
+    .pickctl{flex-direction:column;}
+    .pickctl > *{width:100%;flex:none!important;min-width:0;}
+    .btn{padding:13px 15px;}                           /* bigger tap target */
+    #pickCard .btn{flex:1 1 calc(50% - 6px);}          /* action buttons 2-up */
+    .pal-actions .btn{flex:1 1 calc(50% - 5px);}
+    .pick .check{width:30px;height:30px;flex-basis:30px;}
+    .pal-top{gap:6px;}
+    .pal-loc-sel{width:86px!important;}
+    header{padding:8px 10px;gap:8px;}
+    header img.wordmark{height:26px;}
+    header .title{font-size:11px;padding-left:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+    header .links a{padding:6px 9px;font-size:11px;}
+    .postbar{padding:10px 12px;}
+    .toast{bottom:96px;}
+  }
 </style>
 </head>
 <body>
