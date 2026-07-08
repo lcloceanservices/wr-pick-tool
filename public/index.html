@@ -349,9 +349,11 @@
           <div class="scfld" id="scNoWrap"><label>New pallet # (blank = auto)</label><input type="number" id="scNewNo" min="1" inputmode="numeric" autocomplete="off" placeholder="auto"></div>
           <div class="scfld" id="scLocWrap"><label>Location for new pallet</label><input type="text" id="scLoc" list="scLocList" autocomplete="off" placeholder="e.g. C1-2"></div>
         </div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text);font-weight:600;margin:2px 0 12px;cursor:pointer;"><input type="checkbox" id="scMultiPallet" style="width:auto;flex:0 0 auto;"> This WR spans multiple pallets / locations</label>
         <button class="btn primary block" id="scReceiveBtn">Receive onto pallet</button>
         <div id="scReceiveBanner"></div>
-        <div class="hint">Leave “New pallet #” blank to auto-number, or type a number to reuse one (e.g. #1 after deleting it). Scanning a WR fills the box and jumps to Description.</div>
+        <div id="scMultiBox" class="banner" style="display:none;background:#eef4f6;border:1px solid #d6e6ea;color:var(--text);"></div>
+        <div class="hint">Leave “New pallet #” blank to auto-number, or type a number to reuse one (e.g. #1 after deleting it). Tick <b>“spans multiple pallets”</b> to add the same WR to several pallets/locations in a row. Scanning a WR fills the box and jumps to Description.</div>
       </div>
       <div class="card">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
@@ -1172,7 +1174,7 @@ const SC_LOCATIONS = (function(){
 
 /* ===================== THE SPORTS CENTER — inventory engine (v3) ===================== */
 const scDB = (typeof listDB!=="undefined") ? listDB : null;
-let scPallets={}, scContents={}, scSeq=0, scEditId=null;
+let scPallets={}, scContents={}, scSeq=0, scEditId=null, scMultiLog=[];
 
 function scByName(){ try{ return localStorage.getItem("sc_by")||""; }catch(e){ return ""; } }
 function palletById(id){ return scPallets[id] ? Object.assign({id:id}, scPallets[id]) : null; }
@@ -1218,8 +1220,18 @@ function scReceive(){
     const no = pInfo ? pInfo.no : ((palletById(palletId)||{}).no);
     const loc = pInfo ? pInfo.loc : ((palletById(palletId)||{}).location||"");
     scLogMove({ type:"receive", wr:wr, palletNo:(no!=null?no:null), toLoc:loc, cartons:cartons, unit:unit });
-    banner("scReceiveBanner","✓ WR "+wr+" received onto Pallet #"+(no!=null?no:"new")+".","ok");
-    $("scWr").value=""; $("scDesc").value=""; $("scCartons").value=""; $("scWr").focus();
+    const multi = $("scMultiPallet") && $("scMultiPallet").checked;
+    if(multi){
+      if(scMultiLog.length && scMultiLog[0].wr!==wr) scMultiLog=[];
+      scMultiLog.push({ wr:wr, no:(no!=null?no:null), loc:loc, qty:cartons, unit:unit });
+      renderMultiBox();
+      banner("scReceiveBanner","✓ Added to Pallet #"+(no!=null?no:"new")+". Enter the next pallet / location for WR "+wr+".","ok");
+      $("scCartons").value=""; $("scPalletSel").value="new"; toggleReceiveLoc(); if($("scLoc")){ $("scLoc").value=""; $("scLoc").focus(); }
+    } else {
+      banner("scReceiveBanner","✓ WR "+wr+" received onto Pallet #"+(no!=null?no:"new")+".","ok");
+      scMultiLog=[]; renderMultiBox();
+      $("scWr").value=""; $("scDesc").value=""; $("scCartons").value=""; $("scWr").focus();
+    }
   };
   if(target==="new"){
     const loc=$("scLoc").value;
@@ -1237,6 +1249,19 @@ function scReceive(){
       scNextPalletNo(no=>{ if(no==null){ banner("scReceiveBanner","Couldn't allocate a pallet number — try again.","err"); return; } createWith(no); });
     }
   } else { const tp=palletById(target); addContent(target, {no:(tp?tp.no:null), loc:(tp?tp.location:"")}); }
+}
+function renderMultiBox(){
+  const box=$("scMultiBox"); if(!box) return;
+  if(!scMultiLog.length){ box.style.display="none"; box.innerHTML=""; return; }
+  const rows=scMultiLog.map(p=>"&nbsp;&nbsp;• Pallet #"+(p.no!=null?p.no:"?")+(p.loc?(" · "+escapeHtml(p.loc)):"")+" — "+p.qty+" "+(p.unit==="plt"?"plt":"ctn")+(Number(p.qty)===1?"":"s")).join("<br>");
+  box.style.display="";
+  box.innerHTML='<div style="font-weight:700;color:var(--navy);margin-bottom:4px;">WR '+escapeHtml(scMultiLog[0].wr)+" — on "+scMultiLog.length+" pallet"+(scMultiLog.length===1?"":"s")+":</div>"+rows+'<div style="margin-top:8px;"><button class="btn ghost mini" onclick="scFinishMulti()">✓ Done with this WR</button></div>';
+}
+function scFinishMulti(){
+  scMultiLog=[]; renderMultiBox();
+  $("scWr").value=""; $("scDesc").value=""; $("scCartons").value=""; if($("scNewNo")) $("scNewNo").value="";
+  if($("scReceiveBanner")) $("scReceiveBanner").innerHTML="";
+  $("scWr").focus();
 }
 
 function renderInventory(){
@@ -1642,6 +1667,7 @@ function scInit(){
   if($("scBy")) $("scBy").value=scByName();
   const rb=$("scReceiveBtn"); if(rb) rb.addEventListener("click", scReceive);
   const ps=$("scPalletSel"); if(ps) ps.addEventListener("change", toggleReceiveLoc);
+  const mp=$("scMultiPallet"); if(mp) mp.addEventListener("change",()=>{ const rb=$("scReceiveBtn"); if(rb) rb.textContent = mp.checked ? "Add pallet for this WR" : "Receive onto pallet"; if(!mp.checked){ scMultiLog=[]; renderMultiBox(); } });
   const wr=$("scWr"); if(wr) wr.addEventListener("keydown", e=>{ if(e.key==="Enter"){ e.preventDefault(); $("scDesc").focus(); } });
   const is=$("scInvSearch"); if(is) is.addEventListener("input", renderInventory);
   const psr=$("scPalSearch"); if(psr) psr.addEventListener("input", ()=>{ scFocusNo=null; renderPallets(); });
