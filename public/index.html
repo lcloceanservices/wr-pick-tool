@@ -176,6 +176,8 @@
   .mv-det > summary::before{content:"▸ ";color:var(--teal-d);font-size:11px;}
   .mv-det[open] > summary::before{content:"▾ ";}
   .mv-list{font-size:13px;color:var(--text);margin:6px 0 0 14px;line-height:1.5;word-break:break-word;}
+  .mv-day{font-family:'Montserrat',sans-serif;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:14px 0 4px;padding-top:8px;border-top:2px solid var(--line);}
+  .mv-day:first-child{border-top:none;padding-top:0;margin-top:2px;}
   @media(max-width:860px){
     .menu-btn{display:inline-flex;align-items:center;justify-content:center;}
     .sidebar{position:fixed;top:0;left:0;height:100vh;z-index:30;transform:translateX(-100%);transition:transform .22s;box-shadow:2px 0 16px rgba(0,0,0,.2);padding-top:16px;}
@@ -391,6 +393,7 @@
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
           <h2 style="margin:0;">History</h2>
           <span class="nav-badge" id="scMoveCount" style="background:#eef2f5;color:var(--muted);">0</span>
+          <button class="btn ghost mini" style="margin-left:auto;" onclick="scClearMovements()">Clear history</button>
         </div>
         <div class="pickctl">
           <input type="text" id="scMoveSearch" autocomplete="off" placeholder="Search WR, pallet #, or location…">
@@ -432,6 +435,19 @@
             <div class="scfld" style="margin:0;"><label>Container #</label><input type="text" id="scPickCont" autocomplete="off" placeholder="Container (optional)"></div>
           </div>
           <div class="pickctl" style="margin-top:12px;"><input type="text" id="scPickSearch" autocomplete="off" placeholder="Scan a WR (Enter) or search…"><select id="scPickSort"><option value="loc">Walk route (location)</option><option value="wr">WR # ↑ (low to high)</option><option value="wrdesc">WR # ↓ (high to low)</option><option value="pallet">Pallet #</option><option value="list">List order</option></select></div>
+          <button class="btn ghost mini" id="scAddWrBtn" style="margin-top:4px;">＋ Add WR (last-minute)</button>
+          <div id="scAddWrForm" class="hidden" style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px;">
+            <div class="row">
+              <div class="scfld" style="margin:0;"><label>WR #</label><input type="text" id="mwWr" autocomplete="off"></div>
+              <div class="scfld" style="margin:0;"><label>Piece count</label><input type="number" id="mwQty" min="0" inputmode="numeric" placeholder="0"></div>
+            </div>
+            <div class="row" style="margin-top:8px;">
+              <div class="scfld" style="margin:0;"><label>Unit</label><select id="mwUnit"><option value="ctn">Cartons</option><option value="plt">Pallets</option></select></div>
+              <div class="scfld" style="margin:0;"><label>Location</label><input type="text" id="mwLoc" list="scLocList" autocomplete="off" placeholder="e.g. C1-2 / Floor"></div>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:10px;"><button class="btn primary mini" onclick="scAddManualWR()">Add to pick list</button><button class="btn ghost mini" onclick="scToggleAddWr(false)">Close</button></div>
+            <div id="mwBanner"></div>
+          </div>
         </div>
         <div class="progress-wrap sc" id="scPickProg"><div class="bar"><span id="scPickBar"></span></div><div class="progress-num" id="scPickNum">0 / 0</div></div>
         <div class="card"><div id="scPickList"></div></div>
@@ -846,7 +862,7 @@ function scExportPDF(){
   meta.push("Picked "+done+" of "+total+" lines"+(total>0&&done===total?" — COMPLETE":""));
   meta.push("Generated "+new Date().toLocaleString());
   const head=["#","WR","Description","Pallet","Location","Picked","By","Date / time"];
-  const body=items.map((it,i)=>{ const st=scPickState[it.sid]||{}; const loc=scResolveLoc(it.wr); return [ String(i+1), it.wr||"", it.description||"", (loc.palletStr||""), (loc.locStr||""), (st.picked?"YES":"—"), (st.picked?(st.by||""):""), (st.picked&&st.at?new Date(st.at).toLocaleString():"") ]; });
+  const body=items.map((it,i)=>{ const st=scPickState[it.sid]||{}; const loc=scResolveLoc(it.wr); const pallet=loc.palletStr||(it.manual?"(added)":""); const location=loc.found?loc.locStr:(it.manual?(it.mloc||""):(loc.locStr||"")); const desc=it.description||(it.manual?("added — "+qtyText(it)):""); return [ String(i+1), it.wr||"", desc, pallet, location, (st.picked?"YES":"—"), (st.picked?(st.by||""):""), (st.picked&&st.at?new Date(st.at).toLocaleString():"") ]; });
   pdfReport("sportscenter-pick-"+safeName(name)+".pdf", "Pick Report — "+name, meta, head, body);
 }
 
@@ -1166,9 +1182,12 @@ function closeSidebar(){ const s=$("sidebar"); if(s) s.classList.remove("open");
 const SC = "sportscenter";
 const SC_LOCATIONS = (function(){
   const out=[];
-  ["C1","C2","C3","C4","C5"].forEach(c=>{ for(let r=1;r<=3;r++) out.push(c+"-"+r); });
-  ["D1","D2"].forEach(c=>{ for(let r=1;r<=4;r++) out.push(c+"-"+r); });
-  ["D3","D4","D5","D6","D7","D8"].forEach(c=>{ for(let r=1;r<=3;r++) out.push(c+"-"+r); });
+  const add=(cols,rows)=>cols.forEach(c=>{ for(let r=1;r<=rows;r++) out.push(c+"-"+r); out.push(c+" Floor"); });
+  add(["C1","C2","C3","C4","C5"],3);
+  add(["D1","D2"],4);
+  add(["D3","D4","D5","D6","D7","D8"],3);
+  out.push("Floor");
+  out.push("SC Table");
   return out;
 })();
 
@@ -1418,7 +1437,7 @@ function renderMovements(){
   if(filt) arr=arr.filter(m=> filt==="other" ? ["pallet_empty","pallet_active","delete_pallet","delete_wr","shipped"].indexOf(m.type)>=0 : (filt==="shipment" ? (m.type==="shipment"||m.type==="restored") : m.type===filt) );
   if(q) arr=arr.filter(m=> [m.wr,("#"+(m.palletNo||"")),("#"+(m.fromPalletNo||"")),("#"+(m.toPalletNo||"")),m.fromLoc,m.toLoc,m.type,m.by].join(" ").toLowerCase().indexOf(q)>=0 );
   if(!arr.length){ box.innerHTML='<div class="empty-note">'+(Object.keys(scMoves).length?"No matching movements.":"No movements logged yet.")+'</div>'; return; }
-  box.innerHTML=arr.map(m=>{
+  const rowHtml=(m)=>{
     if(m.type==="shipment" || m.type==="restored"){
       const isShip=m.type==="shipment", ico=isShip?"🚚":"↩", verb=isShip?"Shipped out":"Restored";
       const wrs=(m.wrs||[]), pls=(m.pallets||[]);
@@ -1430,8 +1449,21 @@ function renderMovements(){
     }
     const t=scMoveText(m);
     return '<div class="mv"><span class="mv-ic">'+t.ico+'</span><div class="mv-b"><div class="mv-t">'+t.txt+'</div><div class="mv-s">'+timeAgo(m.at)+(m.by?(' · '+escapeHtml(m.by)):'')+'</div></div></div>';
-  }).join("");
+  };
+  let html="", lastDay="";
+  arr.forEach(m=>{ const d=scDayLabel(m.at); if(d!==lastDay){ html+='<div class="mv-day">'+escapeHtml(d)+'</div>'; lastDay=d; } html+=rowHtml(m); });
+  box.innerHTML=html;
 }
+function scDayLabel(ts){
+  if(!ts) return "Earlier";
+  const d=new Date(ts), now=new Date();
+  const same=(a,b)=>a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate();
+  const y=new Date(now); y.setDate(now.getDate()-1);
+  if(same(d,now)) return "Today";
+  if(same(d,y)) return "Yesterday";
+  return d.toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric",year:"numeric"});
+}
+function scClearMovements(){ if(!scDB) return; if(confirm("Permanently delete ALL movement history? This can't be undone. (Archived picks, inventory and pallets are NOT affected.)")) scDB.ref(SC+"/movements").remove(); }
 
 /* ---------- Sports Center picker ---------- */
 const SC_LOC_ORDER = (function(){ const o={}; SC_LOCATIONS.forEach((l,i)=>o[l]=i); return o; })();
@@ -1440,6 +1472,7 @@ let scHighlight={}, scArLists={}, scPendingPallet=null, scFocusNo=null;
 function scWrKey(wr){ return String(wr||"").trim().toLowerCase().replace(/[.#$/\[\]]/g,"_")||"_"; }
 
 function scPickerName(){ try{ return localStorage.getItem("sc_picker")||""; }catch(e){ return ""; } }
+function qtyText(it){ if(it.expectedQty==null || it.expectedQty==="") return ""; if(it.manual){ const n=Number(it.expectedQty)||0; return n+" "+(it.munit==="plt"?"plt":"ctn")+(n===1?"":"s"); } return "Qty: "+it.expectedQty; }
 function scResolveLoc(wr){
   const w=String(wr||"").trim().toLowerCase();
   if(!w) return { found:false, palletStr:"", locStr:"", sortKey:9999 };
@@ -1456,7 +1489,11 @@ function scRenderPick(){
   const box=$("scPickList"); if(!box) return;
   const q=($("scPickSearch")&&$("scPickSearch").value.trim().toLowerCase())||"";
   const mode=($("scPickSort")&&$("scPickSort").value)||"loc";
-  let rows=scPickItems.map((it,i)=>Object.assign({}, it, {_loc:scResolveLoc(it.wr), _i:i}));
+  let rows=scPickItems.map((it,i)=>{
+    let loc=scResolveLoc(it.wr);
+    if(!loc.found && it.manual){ loc={ found:true, manual:true, palletStr:"", locStr:(it.mloc||""), sortKey:((it.mloc&&SC_LOC_ORDER[it.mloc]!=null)?SC_LOC_ORDER[it.mloc]:9996), palNo:null }; }
+    return Object.assign({}, it, {_loc:loc, _i:i});
+  });
   const byWr=(a,b)=>String(a.wr).localeCompare(String(b.wr),undefined,{numeric:true});
   if(mode==="wr") rows.sort(byWr);
   else if(mode==="wrdesc") rows.sort((a,b)=>byWr(b,a));
@@ -1474,8 +1511,13 @@ function scRenderPick(){
       +'<div class="meta">'
       +'<div class="wrbig">'+escapeHtml(it.wr||"(no WR)")+'</div>'
       +(it.description?'<div class="desc">'+escapeHtml(it.description)+'</div>':'')
-      +'<div class="sub">'+(loc.found?('<span class="tag pal">Pallet '+escapeHtml(loc.palletStr)+'</span>'+(loc.locStr?'<span class="tag loc">'+escapeHtml(loc.locStr)+'</span>':'')):'')+((it.expectedQty!=null&&it.expectedQty!=="")?(' Qty: '+escapeHtml(String(it.expectedQty))):'')+'</div>'
-      +(!loc.found?'<div class="flag">⚠ Not found in Sports Center inventory</div>':(!loc.locStr?'<div class="flag">Pallet has no location set</div>':''))
+      +'<div class="sub">'
+        +(it.manual?'<span class="tag" style="background:var(--coral);color:#fff;">added</span>':'')
+        +(loc.palletStr?('<span class="tag pal">Pallet '+escapeHtml(loc.palletStr)+'</span>'):'')
+        +(loc.locStr?('<span class="tag loc">'+escapeHtml(loc.locStr)+'</span>'):'')
+        +(qtyText(it)?(' '+escapeHtml(qtyText(it))):'')
+      +'</div>'
+      +(!loc.found?'<div class="flag">⚠ Not found in Sports Center inventory</div>':((!loc.locStr && !loc.manual)?'<div class="flag">Pallet has no location set</div>':(loc.manual && !loc.locStr?'<div class="flag">No location entered</div>':'')))
       +(other?('<div class="claimlbl">🔒 Picked by '+escapeHtml(st.by||"another picker")+'</div>'):(picked?('<div class="claimlbl mine">✓ Picked'+(st.by?(' by '+escapeHtml(st.by)):'')+'</div>'):''))
       +'</div></div></div>';
   }).join("");
@@ -1535,7 +1577,7 @@ function scOpenPickList(listId, obj){
   if(scPickUnsub){ try{scPickUnsub();}catch(e){} scPickUnsub=null; }
   scPickListId=listId||null;
   const raw=(obj&&obj.items)||[];
-  scPickItems=raw.map((it,i)=>({ sid:(it.sid!=null?it.sid:i), wr:it.wr||"", description:it.description||"", expectedQty:it.expectedQty }));
+  scPickItems=raw.map((it,i)=>({ sid:(it.sid!=null?it.sid:i), wr:it.wr||"", description:it.description||"", expectedQty:it.expectedQty, manual:!!it.manual, munit:it.munit||"ctn", mloc:it.mloc||"" }));
   scPickState={};
   if($("scPickName")) $("scPickName").textContent=(obj&&obj.name)||"Consolidation";
   if($("scPickerName")) $("scPickerName").value=scPickerName();
@@ -1559,6 +1601,30 @@ function scClosePickList(){
   scPickListId=null; scPickItems=[]; scPickState={};
   $("scPickOpen").classList.add("hidden");
   $("scPickChooser").classList.remove("hidden");
+  scToggleAddWr(false);
+}
+function scToggleAddWr(show){
+  const f=$("scAddWrForm"); if(!f) return;
+  const open = (show===undefined) ? f.classList.contains("hidden") : show;
+  f.classList.toggle("hidden", !open);
+  if(open && $("mwWr")) $("mwWr").focus();
+}
+function scAddManualWR(){
+  if(!scPickListId){ banner("mwBanner","Open a pick list first.","err"); return; }
+  const wr=($("mwWr")&&$("mwWr").value.trim())||"";
+  if(!wr){ banner("mwBanner","Enter a WR #.","err"); if($("mwWr")) $("mwWr").focus(); return; }
+  const qty=Number($("mwQty")&&$("mwQty").value)||0;
+  const unit=($("mwUnit")&&$("mwUnit").value)||"ctn";
+  const loc=($("mwLoc")&&$("mwLoc").value.trim())||"";
+  const sid=scPickItems.reduce((m,it)=>Math.max(m,Number(it.sid)||0),-1)+1;
+  scPickItems.push({ sid:sid, wr:wr, description:"", expectedQty:qty, manual:true, munit:unit, mloc:loc });
+  if(scDB && scPickListId){
+    const payload=scPickItems.map(it=>{ const o={ sid:it.sid, wr:it.wr||"", description:it.description||"", expectedQty:(it.expectedQty!=null?it.expectedQty:"") }; if(it.manual){ o.manual=true; o.munit=it.munit||"ctn"; o.mloc=it.mloc||""; } return o; });
+    scDB.ref(SC+"/picklists/"+scPickListId+"/items").set(payload);
+  }
+  scRenderPick(); scPickProgress();
+  banner("mwBanner","✓ Added WR "+wr+" to the pick list.","ok");
+  if($("mwWr")) $("mwWr").value=""; if($("mwQty")) $("mwQty").value=""; if($("mwLoc")) $("mwLoc").value=""; if($("mwWr")) $("mwWr").focus();
 }
 function scSubscribePickLists(){
   if(!scDB) return;
@@ -1586,7 +1652,7 @@ function scSubmitPick(){
   const name=($("scPickName")&&$("scPickName").textContent)||"Consolidation";
   if(!confirm("Submit this pick?\n\n"+done+" of "+total+" lines picked. The picked WRs will be REMOVED from inventory and the list archived.")) return;
   const bl=($("scPickBL")&&$("scPickBL").value.trim())||"", ct=($("scPickCont")&&$("scPickCont").value.trim())||"";
-  const items=scPickItems.map(it=>{ const st=scPickState[it.sid]||{}; const loc=scResolveLoc(it.wr); return { wr:it.wr||"", description:it.description||"", expectedQty:(it.expectedQty!=null?it.expectedQty:null), pallet:(loc.palletStr||""), location:(loc.locStr||""), picked:!!st.picked, by:(st.by||""), at:(st.at||null) }; });
+  const items=scPickItems.map(it=>{ const st=scPickState[it.sid]||{}; const loc=scResolveLoc(it.wr); return { wr:it.wr||"", description:it.description||"", expectedQty:(it.expectedQty!=null?it.expectedQty:null), pallet:(loc.palletStr||(it.manual?"(added)":"")), location:(loc.found?loc.locStr:(it.manual?(it.mloc||""):"")), picked:!!st.picked, by:(st.by||""), at:(st.at||null) }; });
   const pickedWRs={}; scPickItems.forEach(it=>{ if(scPickState[it.sid]&&scPickState[it.sid].picked){ pickedWRs[String(it.wr||"").trim().toLowerCase()]=it.wr; } });
   const updates={}, affected={}, removed=[];
   Object.keys(scContents).forEach(cid=>{ const c=scContents[cid]; const key=String(c.wr||"").trim().toLowerCase(); if(pickedWRs[key]){ updates[SC+"/contents/"+cid]=null; removed.push({ wr:c.wr||"", description:c.description||"", cartons:(Number(c.cartons)||0), unit:(c.unit||"ctn"), palletId:(c.palletId||"") }); if(c.palletId) affected[c.palletId]=true; } });
@@ -1652,6 +1718,7 @@ function scPickWire(){
   const bl=$("scPickBL"); if(bl) bl.addEventListener("input",()=>{ if(scDB && scPickListId) scDB.ref(SC+"/picklists/"+scPickListId+"/blNum").set(bl.value.trim()); });
   const ct=$("scPickCont"); if(ct) ct.addEventListener("input",()=>{ if(scDB && scPickListId) scDB.ref(SC+"/picklists/"+scPickListId+"/container").set(ct.value.trim()); });
   const ars=$("scArSearch"); if(ars) ars.addEventListener("input", renderScArchive);
+  const awb=$("scAddWrBtn"); if(awb) awb.addEventListener("click", ()=>scToggleAddWr());
   const ps=$("scPickSearch"); if(ps){ ps.addEventListener("input", scRenderPick); ps.addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); scScan(); } }); }
   const so=$("scPickSort"); if(so){ try{ const sv=localStorage.getItem("sc_picksort"); if(sv) so.value=sv; }catch(e){} so.addEventListener("change",()=>{ try{localStorage.setItem("sc_picksort",so.value);}catch(e){} scRenderPick(); }); }
   const drop=$("scPickLoad");
