@@ -157,6 +157,7 @@
   .inv-row.hl{background:#e6f7ee;border-color:#1d9e75;}
   .pal-card.hl{box-shadow:0 0 0 2px #1d9e75;}
   .pal-card.flash-card{box-shadow:0 0 0 3px var(--teal);transition:box-shadow .2s;}
+  .pal-sel{width:20px;height:20px;flex:0 0 auto;margin:0 2px 0 0;cursor:pointer;}
   .focus-note{display:flex;align-items:center;gap:10px;background:#eef4f6;border:1px solid #d6e6ea;border-radius:10px;padding:8px 12px;margin-bottom:10px;font-size:13px;color:var(--navy);}
   .focus-note button{margin-left:auto;}
   .pal-wrs .w.hl{background:#e6f7ee;border-radius:6px;margin:0 -6px;padding-left:6px;padding-right:6px;}
@@ -387,6 +388,20 @@
         <div class="pickctl">
           <input type="text" id="scPalSearch" autocomplete="off" placeholder="Search pallet #, location, or WR…">
           <select id="scPalFilter"><option value="">All pallets</option><option value="active">Active only</option><option value="empty">Empty only</option></select>
+        </div>
+        <div id="scCombineBar" style="display:none;align-items:center;gap:10px;background:#eef4f6;border:1px solid #d6e6ea;border-radius:10px;padding:8px 12px;margin-bottom:10px;font-size:13px;color:var(--navy);">
+          <span id="scCombineCount">0 selected</span>
+          <button class="btn navy mini" onclick="scOpenCombine()">Combine…</button>
+          <button class="btn ghost mini" onclick="scClearPalSel()">Clear</button>
+        </div>
+        <div id="scCombineForm" class="hidden" style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:10px;background:#fbfcfd;">
+          <div style="font-weight:700;color:var(--navy);margin-bottom:8px;">Combine <span id="scCombFromLbl" style="font-weight:600;color:var(--muted);"></span> into one pallet</div>
+          <div class="row">
+            <div class="scfld" style="margin:0;"><label>Into pallet #</label><input type="number" id="scCombNo" min="1" inputmode="numeric"></div>
+            <div class="scfld" style="margin:0;"><label>Location</label><input type="text" id="scCombLoc" list="scLocList" autocomplete="off" placeholder="e.g. C1-2 / Floor"></div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:10px;"><button class="btn primary mini" onclick="scConfirmCombine()">Confirm combine</button><button class="btn ghost mini" onclick="scCancelCombine()">Cancel</button></div>
+          <div class="hint">All cartons from the selected pallets move onto this pallet; the others are marked empty.</div>
         </div>
         <div id="scPalletList"></div>
       </div>
@@ -1369,7 +1384,7 @@ function renderPallets(){
     const anyHl=items.some(c=>scHighlight[scWrKey(c.wr)]);
     const wrHtml=items.length ? items.map(c=>'<div class="w'+(scHighlight[scWrKey(c.wr)]?' hl':'')+'"><span>'+escapeHtml(c.wr||"")+(c.description?' — '+escapeHtml(c.description):'')+'</span><span style="white-space:nowrap;color:var(--muted);">'+qtyStr(c)+'</span></div>').join("") : '<div class="empty-note">No WRs on this pallet.</div>';
     return '<div class="pal-card'+(empty?' empty':'')+(anyHl?' hl':'')+'" data-pno="'+p.no+'">'
-      +'<div class="pal-top"><span class="pal-no">Pallet #'+p.no+'</span>'
+      +'<div class="pal-top"><input type="checkbox" class="pal-sel" '+(scPalSel[p.id]?'checked ':'')+'onclick="scTogglePalSel(\''+p.id+'\',this.checked)" title="Select to combine"><span class="pal-no">Pallet #'+p.no+'</span>'
       +'<input class="pal-loc-sel mini" list="scLocList" title="Location" placeholder="location" value="'+escapeHtml(p.location||"")+'" onchange="scSetLocation(\''+p.id+'\',this.value.trim())">'
       +'<span class="pal-status '+(empty?'empty':'active')+'">'+(empty?'Empty':'Active')+'</span>'
       +'<span style="margin-left:auto;font-size:12px;color:var(--muted);">'+items.length+' WR'+(items.length===1?'':'s')+' · '+totalsStr(tot)+'</span></div>'
@@ -1382,6 +1397,7 @@ function renderPallets(){
       +'</div></div>';
   }).join("");
   if(scPendingPallet!=null){ const c=box.querySelector('.pal-card[data-pno="'+scPendingPallet+'"]'); if(c){ const t=scPendingPallet; scPendingPallet=null; setTimeout(()=>scFocusPallet(t),150); } }
+  scUpdateCombineBar();
 }
 function scFocusPallet(no){
   scFocusNo=Number(no);
@@ -1390,6 +1406,53 @@ function scFocusPallet(no){
   setTimeout(()=>{ const c=document.querySelector('.pal-card[data-pno="'+no+'"]'); if(c){ c.scrollIntoView({behavior:"smooth",block:"center"}); c.classList.add("flash-card"); setTimeout(()=>c.classList.remove("flash-card"),1400); } else { toast("Pallet #"+no+" not found"); } }, 80);
 }
 function scClearFocus(){ scFocusNo=null; if($("scPalSearch")) $("scPalSearch").value=""; renderPallets(); }
+/* ---------- combine / consolidate pallets ---------- */
+function scSelectedPallets(){ return Object.keys(scPalSel).filter(id=>scPallets[id]).map(id=>Object.assign({id:id}, scPallets[id])).sort((a,b)=>(a.no||0)-(b.no||0)); }
+function scTogglePalSel(id, checked){ if(checked) scPalSel[id]=true; else delete scPalSel[id]; scUpdateCombineBar(); }
+function scClearPalSel(){ scPalSel={}; const f=$("scCombineForm"); if(f) f.classList.add("hidden"); renderPallets(); }
+function scUpdateCombineBar(){
+  const bar=$("scCombineBar"); if(!bar) return;
+  Object.keys(scPalSel).forEach(id=>{ if(!scPallets[id]) delete scPalSel[id]; });
+  const n=scSelectedPallets().length;
+  bar.style.display = n>=1 ? "flex" : "none";
+  const c=$("scCombineCount"); if(c) c.textContent=n+" selected";
+  if(n<1){ const f=$("scCombineForm"); if(f) f.classList.add("hidden"); }
+}
+function scOpenCombine(){
+  const sel=scSelectedPallets();
+  if(sel.length<2){ toast("Select at least 2 pallets to combine"); return; }
+  const base=sel[0];
+  if($("scCombNo")) $("scCombNo").value=base.no;
+  if($("scCombLoc")) $("scCombLoc").value=base.location||"";
+  if($("scCombFromLbl")) $("scCombFromLbl").textContent=sel.map(p=>"#"+p.no).join(", ");
+  const f=$("scCombineForm"); if(f) f.classList.remove("hidden");
+}
+function scCancelCombine(){ const f=$("scCombineForm"); if(f) f.classList.add("hidden"); }
+function scConfirmCombine(){
+  if(!scDB) return;
+  const sel=scSelectedPallets();
+  if(sel.length<2){ toast("Select at least 2 pallets"); return; }
+  const base=sel[0], baseId=base.id;
+  const no=parseInt(($("scCombNo")&&$("scCombNo").value)||"",10)||base.no;
+  const loc=($("scCombLoc")&&$("scCombLoc").value.trim())||"";
+  const selIds={}; sel.forEach(p=>selIds[p.id]=true);
+  const clash=Object.keys(scPallets).some(k=>!selIds[k] && Number(scPallets[k].no)===no);
+  if(clash && !confirm("Pallet #"+no+" already exists (not in your selection). Combine into it anyway?")) return;
+  const fromNos=sel.map(p=>p.no);
+  if(!confirm("Combine "+sel.length+" pallets ("+fromNos.map(n=>"#"+n).join(", ")+") into Pallet #"+no+(loc?(" at "+loc):"")+"?\n\nAll cartons move onto that pallet; the others are marked empty.")) return;
+  const updates={};
+  Object.keys(scContents).forEach(cid=>{ const c=scContents[cid]; if(c.palletId && selIds[c.palletId] && c.palletId!==baseId){ updates[SC+"/contents/"+cid+"/palletId"]=baseId; } });
+  updates[SC+"/pallets/"+baseId+"/no"]=no;
+  updates[SC+"/pallets/"+baseId+"/location"]=loc;
+  updates[SC+"/pallets/"+baseId+"/status"]="active";
+  updates[SC+"/pallets/"+baseId+"/updatedAt"]=Date.now();
+  sel.forEach(p=>{ if(p.id!==baseId){ updates[SC+"/pallets/"+p.id+"/status"]="empty"; updates[SC+"/pallets/"+p.id+"/updatedAt"]=Date.now(); } });
+  scDB.ref().update(updates);
+  scLogMove({ type:"combine", palletNo:no, toLoc:loc, from:fromNos });
+  scPalSel={}; const f=$("scCombineForm"); if(f) f.classList.add("hidden");
+  scFocusNo=null;
+  toast("Combined into Pallet #"+no);
+}
 function scSetLocation(id,loc){ const p=scPallets[id]; const from=p?(p.location||""):""; if(from===loc){ return; } scDB.ref(SC+"/pallets/"+id).update({location:loc, updatedAt:Date.now()}); scLogMove({ type:"pallet_move", palletNo:(p?p.no:null), fromLoc:from, toLoc:loc }); toast(loc?("Moved to "+loc):"Location cleared"); }
 function scToggleEmpty(id){ const p=scPallets[id]; if(!p) return; const ns=(p.status==="empty")?"active":"empty"; scDB.ref(SC+"/pallets/"+id).update({status:ns, updatedAt:Date.now()}); scLogMove({ type:(ns==="empty"?"pallet_empty":"pallet_active"), palletNo:p.no }); }
 function scRenamePallet(id){
@@ -1447,6 +1510,7 @@ function scMoveText(m){
     case "pallet_empty": return { ico:"🗑", txt:"Pallet "+P(m.palletNo)+" marked empty" };
     case "pallet_active": return { ico:"♻", txt:"Pallet "+P(m.palletNo)+" reactivated" };
     case "delete_pallet": return { ico:"❌", txt:"Deleted Pallet "+P(m.palletNo) };
+    case "combine": return { ico:"🧩", txt:"Combined "+((m.from||[]).map(n=>"#"+escapeHtml(String(n))).join(", "))+" → Pallet "+P(m.palletNo)+(m.toLoc?(" · "+escapeHtml(m.toLoc)):"") };
     case "shipped": return { ico:"🚚", txt:"Shipped out <b>WR "+escapeHtml(m.wr||"")+"</b> (picked &amp; removed)" };
     case "delete_wr": return { ico:"❌", txt:"Removed <b>WR "+escapeHtml(m.wr||"")+"</b> from Pallet "+P(m.palletNo) };
     default: return { ico:"•", txt:escapeHtml(m.type||"movement") };
@@ -1492,7 +1556,7 @@ function scClearMovements(){ if(!scDB) return; if(confirm("Permanently delete AL
 /* ---------- Sports Center picker ---------- */
 const SC_LOC_ORDER = (function(){ const o={}; SC_LOCATIONS.forEach((l,i)=>o[l]=i); return o; })();
 let scPickListId=null, scPickItems=[], scPickState={}, scPickLists={}, scPickUnsub=null, scPickCelebrated=false, scPickOpenedAt=0;
-let scHighlight={}, scArLists={}, scPendingPallet=null, scFocusNo=null;
+let scHighlight={}, scArLists={}, scPendingPallet=null, scFocusNo=null, scPalSel={};
 function scWrKey(wr){ return String(wr||"").trim().toLowerCase().replace(/[.#$/\[\]]/g,"_")||"_"; }
 
 function scPickerName(){ try{ return localStorage.getItem("sc_picker")||""; }catch(e){ return ""; } }
