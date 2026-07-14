@@ -1428,6 +1428,18 @@ function scOpenCombine(){
   const f=$("scCombineForm"); if(f) f.classList.remove("hidden");
 }
 function scCancelCombine(){ const f=$("scCombineForm"); if(f) f.classList.add("hidden"); }
+function scUndoCombine(id){
+  const m=scMoves[id]; if(!m || !m.undo){ toast("Nothing to undo"); return; }
+  if(m.undone){ toast("Already undone"); return; }
+  if(!confirm("Undo this combine? Cartons go back to their original pallets and the pallets are restored. (Best effort — items shipped or changed since won't move.)")) return;
+  const u=m.undo, updates={};
+  (u.moved||[]).forEach(x=>{ if(scContents[x.cid]) updates[SC+"/contents/"+x.cid+"/palletId"]=x.from; });
+  if(u.baseId && u.basePrev && scPallets[u.baseId]){ updates[SC+"/pallets/"+u.baseId+"/no"]=u.basePrev.no; updates[SC+"/pallets/"+u.baseId+"/location"]=u.basePrev.location||""; updates[SC+"/pallets/"+u.baseId+"/status"]=u.basePrev.status||"active"; updates[SC+"/pallets/"+u.baseId+"/updatedAt"]=Date.now(); }
+  (u.others||[]).forEach(o=>{ if(scPallets[o.id]){ updates[SC+"/pallets/"+o.id+"/status"]=o.prevStatus||"active"; updates[SC+"/pallets/"+o.id+"/updatedAt"]=Date.now(); } });
+  updates[SC+"/movements/"+id+"/undone"]=true;
+  scDB.ref().update(updates);
+  toast("Combine undone");
+}
 function scConfirmCombine(){
   if(!scDB) return;
   const sel=scSelectedPallets();
@@ -1440,15 +1452,15 @@ function scConfirmCombine(){
   if(clash && !confirm("Pallet #"+no+" already exists (not in your selection). Combine into it anyway?")) return;
   const fromNos=sel.map(p=>p.no);
   if(!confirm("Combine "+sel.length+" pallets ("+fromNos.map(n=>"#"+n).join(", ")+") into Pallet #"+no+(loc?(" at "+loc):"")+"?\n\nAll cartons move onto that pallet; the others are marked empty.")) return;
-  const updates={};
-  Object.keys(scContents).forEach(cid=>{ const c=scContents[cid]; if(c.palletId && selIds[c.palletId] && c.palletId!==baseId){ updates[SC+"/contents/"+cid+"/palletId"]=baseId; } });
+  const updates={}, moved=[], others=[];
+  Object.keys(scContents).forEach(cid=>{ const c=scContents[cid]; if(c.palletId && selIds[c.palletId] && c.palletId!==baseId){ updates[SC+"/contents/"+cid+"/palletId"]=baseId; moved.push({cid:cid, from:c.palletId}); } });
   updates[SC+"/pallets/"+baseId+"/no"]=no;
   updates[SC+"/pallets/"+baseId+"/location"]=loc;
   updates[SC+"/pallets/"+baseId+"/status"]="active";
   updates[SC+"/pallets/"+baseId+"/updatedAt"]=Date.now();
-  sel.forEach(p=>{ if(p.id!==baseId){ updates[SC+"/pallets/"+p.id+"/status"]="empty"; updates[SC+"/pallets/"+p.id+"/updatedAt"]=Date.now(); } });
+  sel.forEach(p=>{ if(p.id!==baseId){ others.push({id:p.id, prevStatus:(p.status||"active")}); updates[SC+"/pallets/"+p.id+"/status"]="empty"; updates[SC+"/pallets/"+p.id+"/updatedAt"]=Date.now(); } });
   scDB.ref().update(updates);
-  scLogMove({ type:"combine", palletNo:no, toLoc:loc, from:fromNos });
+  scLogMove({ type:"combine", palletNo:no, toLoc:loc, from:fromNos, undo:{ baseId:baseId, basePrev:{ no:base.no, location:(base.location||""), status:(base.status||"active") }, moved:moved, others:others } });
   scPalSel={}; const f=$("scCombineForm"); if(f) f.classList.add("hidden");
   scFocusNo=null;
   toast("Combined into Pallet #"+no);
@@ -1536,7 +1548,9 @@ function renderMovements(){
       return '<div class="mv"><span class="mv-ic">'+ico+'</span><div class="mv-b"><details class="mv-det"><summary>'+label+'</summary>'+body+'</details><div class="mv-s">'+timeAgo(m.at)+(m.by?(' · '+escapeHtml(m.by)):'')+'</div></div></div>';
     }
     const t=scMoveText(m);
-    return '<div class="mv"><span class="mv-ic">'+t.ico+'</span><div class="mv-b"><div class="mv-t">'+t.txt+'</div><div class="mv-s">'+timeAgo(m.at)+(m.by?(' · '+escapeHtml(m.by)):'')+'</div></div></div>';
+    let extra="";
+    if(m.type==="combine"){ extra = (m.undo && !m.undone) ? ('<button class="btn ghost mini" style="margin-top:6px;" onclick="scUndoCombine(\''+m.id+'\')">Undo combine</button>') : (m.undone?'<div class="ar-sub" style="margin-top:3px;">↩ undone</div>':''); }
+    return '<div class="mv"><span class="mv-ic">'+t.ico+'</span><div class="mv-b"><div class="mv-t">'+t.txt+'</div>'+extra+'<div class="mv-s">'+timeAgo(m.at)+(m.by?(' · '+escapeHtml(m.by)):'')+'</div></div></div>';
   };
   let html="", lastDay="";
   arr.forEach(m=>{ const d=scDayLabel(m.at); if(d!==lastDay){ html+='<div class="mv-day">'+escapeHtml(d)+'</div>'; lastDay=d; } html+=rowHtml(m); });
