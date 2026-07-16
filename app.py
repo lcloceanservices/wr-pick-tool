@@ -467,32 +467,6 @@ def render_page(active="splitter"):
 
 
 # ---------------------------------------------------------------- hub landing
-HUB_BODY = r"""
-<div class="lead">
-  <h2>PDF Tools</h2>
-  <p>A hub for our PDF utilities. Pick a tool to get started.</p>
-</div>
-<div class="grid">
-  <a class="tile" href="/splitter">
-    <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h2M8 17h2M14 13h2M14 17h2"/></svg></span>
-    <h3>WR PDF Splitter</h3>
-    <p>Split a multi-invoice PDF into separate files, named by the handwritten WR number on each invoice.</p>
-    <span class="go">Open tool &#8594;</span>
-  </a>
-  <a class="tile coral" href="/cleaner">
-    <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg></span>
-    <h3>PDF Cleaner</h3>
-    <p>Scan a combined PDF for duplicate invoices/pages, remove them, and optionally compress the file to email it easily.</p>
-    <span class="go">Open tool &#8594;</span>
-  </a>
-  <a class="tile" href="/combiner">
-    <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/><path d="M9 12h6"/></svg></span>
-    <h3>PDF Combiner</h3>
-    <p>Merge a Bill of Lading, consolidation list, and invoices into one PDF - in order - named by BL # and customer.</p>
-    <span class="go">Open tool &#8594;</span>
-  </a>
-</div>
-"""
 
 
 # ---------------------------------------------------------------- splitter page
