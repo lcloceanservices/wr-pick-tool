@@ -141,6 +141,16 @@ function rowsToItems(rows) {
     }
 
     const cleanQty = parseInt(String(expectedQty).replace(/[^0-9]/g, ""), 10);
+
+    // Detect a "MUST GO" / "IF" priority flag from any whole cell on the row
+    // (exact cell match so we don't false-positive on words like "gift").
+    let flag = "";
+    for (let ci = 0; ci < row.length; ci++) {
+      const v = String(row[ci] == null ? "" : row[ci]).trim().toUpperCase();
+      if (v === "MUST" || v === "MUST GO" || v === "MUSTGO" || v === "MUST-GO") { flag = "must"; break; }
+      if ((v === "IF" || v === "IFS" || v === "IF ROOM" || v === "IF SPACE" || v === "IF POSSIBLE") && !flag) { flag = "if"; }
+    }
+
     items.push({
       wr: String(wr || "").trim(),
       description: String(description || "").trim(),
@@ -149,6 +159,7 @@ function rowsToItems(rows) {
       customer: String(customer || "").trim(),
       weight: String(weight || "").trim(),
       dims: String(dims || "").trim(),
+      flag: flag,
     });
   }
 

@@ -137,6 +137,10 @@
   .inv-row .s{font-size:12px;color:var(--muted);margin-top:4px;}
   .tag{display:inline-block;font-size:11px;font-weight:700;padding:2px 7px;border-radius:6px;margin-right:5px;}
   .tag.pal{background:var(--navy);color:#fff;}
+  .tag.must{background:#2f6fed;color:#fff;}
+  .tag.iff{background:#c97a09;color:#fff;}
+  .pick.must{box-shadow:inset 5px 0 0 #2f6fed;}
+  .pick.iff{box-shadow:inset 5px 0 0 #c97a09;}
   .tag.loc{background:#eef4f6;color:var(--teal-d);border:1px solid #d6e6ea;}
   .mini{padding:8px 10px!important;font-size:14px!important;border:1px solid var(--line);border-radius:9px;}
   button.mini{font-size:13px!important;padding:8px 12px!important;}
@@ -634,6 +638,7 @@ function openList(listId, listObj){
     description: it.description|| (it.wr? "":"(no description)"),
     expectedQty: numOrBlank(it.expectedQty),
     location: it.location||"", weight: it.weight||"", dims: it.dims||"",
+    flag: it.flag||"",
     actualQty: numOrBlank(it.expectedQty),
     picked:false, by:"", byId:"",
   }));
@@ -721,12 +726,13 @@ function renderList(){
   getVisibleItems().forEach((it)=>{
     const other = it.picked && it.byId && it.byId!==myId;
     const el=document.createElement("div");
-    el.className="pick";
+    el.className="pick"+(it.flag==="must"?" must":it.flag==="if"?" iff":"");
     el.id="row_"+it.sid;
     el.innerHTML=`
       <div class="top">
         <div class="check${other?' lock':''}" data-pick="${it.sid}">${it.picked?"\u2713":""}</div>
         <div class="meta">
+          ${it.flag?`<div style="margin-bottom:3px;"><span class="tag ${it.flag==='must'?'must':'iff'}">${it.flag==='must'?'MUST GO':'IF'}</span></div>`:""}
           ${it.wr?`<div class="wrbig">${escapeHtml(it.wr)}</div>`:""}
           <div class="desc">${escapeHtml(it.description)}</div>
           <div class="sub">${[
@@ -870,7 +876,7 @@ function exportPickPdf(){
   meta.push("Picked "+done+" of "+total+" lines"+(total>0&&done===total?" — COMPLETE":""));
   meta.push("Generated "+new Date().toLocaleString());
   const head=["#","WR","Description","Qty","Picked","By","Date / time"];
-  const body=items.map((it,i)=>[ String(i+1), it.wr||"", it.description||"", (it.actualQty===""||it.actualQty==null?"":String(it.actualQty)), (it.picked?"YES":"—"), (it.picked?(it.by||""):""), (it.picked&&it.at?new Date(it.at).toLocaleString():"") ]);
+  const body=items.map((it,i)=>[ String(i+1), it.wr||"", ((it.flag==="must"?"[MUST] ":it.flag==="if"?"[IF] ":"")+(it.description||"")), (it.actualQty===""||it.actualQty==null?"":String(it.actualQty)), (it.picked?"YES":"—"), (it.picked?(it.by||""):""), (it.picked&&it.at?new Date(it.at).toLocaleString():"") ]);
   pdfReport("pick-"+safeName(name)+".pdf", "Pick Report — "+name, meta, head, body);
 }
 function scExportPDF(){
@@ -884,7 +890,7 @@ function scExportPDF(){
   meta.push("Picked "+done+" of "+total+" lines"+(total>0&&done===total?" — COMPLETE":""));
   meta.push("Generated "+new Date().toLocaleString());
   const head=["#","WR","Description","Pallet","Location","Picked","By","Date / time"];
-  const body=items.map((it,i)=>{ const st=scPickState[it.sid]||{}; const loc=scResolveLoc(it.wr); const pallet=loc.palletStr||(it.manual?"(added)":""); const location=loc.found?loc.locStr:(it.manual?(it.mloc||""):(loc.locStr||"")); const desc=it.description||(it.manual?("added — "+qtyText(it)):""); return [ String(i+1), it.wr||"", desc, pallet, location, (st.picked?"YES":"—"), (st.picked?(st.by||""):""), (st.picked&&st.at?new Date(st.at).toLocaleString():"") ]; });
+  const body=items.map((it,i)=>{ const st=scPickState[it.sid]||{}; const loc=scResolveLoc(it.wr); const pallet=loc.palletStr||(it.manual?"(added)":""); const location=loc.found?loc.locStr:(it.manual?(it.mloc||""):(loc.locStr||"")); const desc=(it.flag==="must"?"[MUST] ":it.flag==="if"?"[IF] ":"")+(it.description||(it.manual?("added — "+qtyText(it)):"")); return [ String(i+1), it.wr||"", desc, pallet, location, (st.picked?"YES":"—"), (st.picked?(st.by||""):""), (st.picked&&st.at?new Date(st.at).toLocaleString():"") ]; });
   pdfReport("sportscenter-pick-"+safeName(name)+".pdf", "Pick Report — "+name, meta, head, body);
 }
 
@@ -900,7 +906,8 @@ function archiveLinesHtml(items, isSC){
     if(isSC){ if(it.pallet) parts.push("Pallet "+escapeHtml(it.pallet)); if(it.location) parts.push(escapeHtml(it.location)); }
     else { if(it.location) parts.push("Loc "+escapeHtml(it.location)); if(it.actualQty!=null) parts.push("qty "+escapeHtml(String(it.actualQty))); }
     parts.push(it.picked ? ('picked'+(it.by?(' by '+escapeHtml(it.by)):'')+(it.at?(' · '+escapeHtml(new Date(it.at).toLocaleString())):'')) : 'not picked');
-    return '<div class="ar-line"><span class="ar-chk'+(it.picked?' on':'')+'">'+(it.picked?'✓':'')+'</span><div style="min-width:0;"><div class="ar-wr">'+escapeHtml(it.wr||"")+(it.description?(' — '+escapeHtml(it.description)):'')+'</div><div class="ar-sub">'+parts.join(' · ')+'</div></div></div>';
+    const ftag = it.flag==="must"?'<span class="tag must">MUST</span> ':(it.flag==="if"?'<span class="tag iff">IF</span> ':'');
+    return '<div class="ar-line"><span class="ar-chk'+(it.picked?' on':'')+'">'+(it.picked?'✓':'')+'</span><div style="min-width:0;"><div class="ar-wr">'+ftag+escapeHtml(it.wr||"")+(it.description?(' — '+escapeHtml(it.description)):'')+'</div><div class="ar-sub">'+parts.join(' · ')+'</div></div></div>';
   }).join("");
   return html;
 }
@@ -913,7 +920,7 @@ function archiveRegular(){
   const name=($("refNum").value.trim())||($("consolName").value.trim())||"Consolidation";
   if(!confirm("Archive “"+name+"” ("+done+" of "+total+" picked) and move it out of the active lists?")) return;
   const snap={ reference:$("refNum").value.trim(), name:($("consolName").value.trim()||name), blNum:$("blNum").value.trim(), container:state.container||"", at:Date.now(), total:total, done:done,
-    items: state.items.map(it=>({ wr:it.wr||"", description:it.description||"", expectedQty:(it.expectedQty===""?null:it.expectedQty), actualQty:(it.actualQty===""?null:it.actualQty), location:it.location||"", picked:!!it.picked, by:it.by||"", at:it.at||null })) };
+    items: state.items.map(it=>({ wr:it.wr||"", description:it.description||"", expectedQty:(it.expectedQty===""?null:it.expectedQty), actualQty:(it.actualQty===""?null:it.actualQty), location:it.location||"", flag:it.flag||"", picked:!!it.picked, by:it.by||"", at:it.at||null })) };
   if(listDB){ listDB.ref("archive").push(snap); if(state.listId){ listDB.ref("picklists/"+state.listId).remove(); listDB.ref("pickstate/"+state.listId).remove(); } }
   toast("Archived ✓"); resetAll(); showPage("picking-archive");
 }
@@ -1607,10 +1614,11 @@ function scRenderPick(){
   box.innerHTML=rows.map(it=>{
     const st=scPickState[it.sid]||{}, picked=!!st.picked, loc=it._loc;
     const other = picked && st.byId && st.byId!==state.deviceId;
-    return '<div class="pick'+(picked?' done':'')+'" id="scrow_'+it.sid+'">'
+    return '<div class="pick'+(picked?' done':'')+(it.flag==="must"?' must':it.flag==="if"?' iff':'')+'" id="scrow_'+it.sid+'">'
       +'<div class="top">'
       +'<div class="check'+(other?' lock':'')+'" onclick="scTogglePick(\''+it.sid+'\')">'+(picked?'✓':'')+'</div>'
       +'<div class="meta">'
+      +(it.flag?('<div style="margin-bottom:3px;"><span class="tag '+(it.flag==='must'?'must':'iff')+'">'+(it.flag==='must'?'MUST GO':'IF')+'</span></div>'):'')
       +'<div class="wrbig">'+escapeHtml(it.wr||"(no WR)")+'</div>'
       +(it.description?'<div class="desc">'+escapeHtml(it.description)+'</div>':'')
       +'<div class="sub">'
@@ -1668,7 +1676,7 @@ async function scIngest(f){
     if(!r.ok||data.error) throw new Error(data.error||"parse failed");
     if(!data.items.length) throw new Error("No rows found — check the file");
     const nm=listNameFrom(data.items, f.name);
-    const items=data.items.map((it,i)=>({ sid:i, wr:it.wr||"", description:it.description||"", expectedQty:(it.expectedQty!=null?it.expectedQty:"") }));
+    const items=data.items.map((it,i)=>({ sid:i, wr:it.wr||"", description:it.description||"", expectedQty:(it.expectedQty!=null?it.expectedQty:""), flag:(it.flag||"") }));
     let key=null;
     if(scDB){ const ref=scDB.ref(SC+"/picklists").push({ name:nm, createdAt:Date.now(), items:items }); key=ref.key; }
     scOpenPickList(key, { name:nm, items:items });
@@ -1679,7 +1687,7 @@ function scOpenPickList(listId, obj){
   if(scPickUnsub){ try{scPickUnsub();}catch(e){} scPickUnsub=null; }
   scPickListId=listId||null;
   const raw=(obj&&obj.items)||[];
-  scPickItems=raw.map((it,i)=>({ sid:(it.sid!=null?it.sid:i), wr:it.wr||"", description:it.description||"", expectedQty:it.expectedQty, manual:!!it.manual, munit:it.munit||"ctn", mloc:it.mloc||"" }));
+  scPickItems=raw.map((it,i)=>({ sid:(it.sid!=null?it.sid:i), wr:it.wr||"", description:it.description||"", expectedQty:it.expectedQty, flag:(it.flag||""), manual:!!it.manual, munit:it.munit||"ctn", mloc:it.mloc||"" }));
   scPickState={};
   if($("scPickName")) $("scPickName").textContent=(obj&&obj.name)||"Consolidation";
   if($("scPickerName")) $("scPickerName").value=scPickerName();
@@ -1721,7 +1729,7 @@ function scAddManualWR(){
   const sid=scPickItems.reduce((m,it)=>Math.max(m,Number(it.sid)||0),-1)+1;
   scPickItems.push({ sid:sid, wr:wr, description:"", expectedQty:qty, manual:true, munit:unit, mloc:loc });
   if(scDB && scPickListId){
-    const payload=scPickItems.map(it=>{ const o={ sid:it.sid, wr:it.wr||"", description:it.description||"", expectedQty:(it.expectedQty!=null?it.expectedQty:"") }; if(it.manual){ o.manual=true; o.munit=it.munit||"ctn"; o.mloc=it.mloc||""; } return o; });
+    const payload=scPickItems.map(it=>{ const o={ sid:it.sid, wr:it.wr||"", description:it.description||"", expectedQty:(it.expectedQty!=null?it.expectedQty:"") }; if(it.flag) o.flag=it.flag; if(it.manual){ o.manual=true; o.munit=it.munit||"ctn"; o.mloc=it.mloc||""; } return o; });
     scDB.ref(SC+"/picklists/"+scPickListId+"/items").set(payload);
   }
   scRenderPick(); scPickProgress();
@@ -1754,7 +1762,7 @@ function scSubmitPick(){
   const name=($("scPickName")&&$("scPickName").textContent)||"Consolidation";
   if(!confirm("Submit this pick?\n\n"+done+" of "+total+" lines picked. The picked WRs will be REMOVED from inventory and the list archived.")) return;
   const bl=($("scPickBL")&&$("scPickBL").value.trim())||"", ct=($("scPickCont")&&$("scPickCont").value.trim())||"";
-  const items=scPickItems.map(it=>{ const st=scPickState[it.sid]||{}; const loc=scResolveLoc(it.wr); return { wr:it.wr||"", description:it.description||"", expectedQty:(it.expectedQty!=null?it.expectedQty:null), pallet:(loc.palletStr||(it.manual?"(added)":"")), location:(loc.found?loc.locStr:(it.manual?(it.mloc||""):"")), picked:!!st.picked, by:(st.by||""), at:(st.at||null) }; });
+  const items=scPickItems.map(it=>{ const st=scPickState[it.sid]||{}; const loc=scResolveLoc(it.wr); return { wr:it.wr||"", description:it.description||"", expectedQty:(it.expectedQty!=null?it.expectedQty:null), flag:(it.flag||""), pallet:(loc.palletStr||(it.manual?"(added)":"")), location:(loc.found?loc.locStr:(it.manual?(it.mloc||""):"")), picked:!!st.picked, by:(st.by||""), at:(st.at||null) }; });
   const pickedWRs={}; scPickItems.forEach(it=>{ if(scPickState[it.sid]&&scPickState[it.sid].picked){ pickedWRs[String(it.wr||"").trim().toLowerCase()]=it.wr; } });
   const updates={}, affected={}, removed=[];
   Object.keys(scContents).forEach(cid=>{ const c=scContents[cid]; const key=String(c.wr||"").trim().toLowerCase(); if(pickedWRs[key]){ updates[SC+"/contents/"+cid]=null; removed.push({ wr:c.wr||"", description:c.description||"", cartons:(Number(c.cartons)||0), unit:(c.unit||"ctn"), palletId:(c.palletId||"") }); if(c.palletId) affected[c.palletId]=true; } });
