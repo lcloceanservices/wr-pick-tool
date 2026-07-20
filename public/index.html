@@ -162,6 +162,20 @@
   .pal-card.hl{box-shadow:0 0 0 2px #1d9e75;}
   .pal-card.flash-card{box-shadow:0 0 0 3px var(--teal);transition:box-shadow .2s;}
   .pal-sel{width:20px;height:20px;flex:0 0 auto;margin:0 2px 0 0;cursor:pointer;}
+  .dot{flex:0 0 22px;width:22px;height:22px;border-radius:50%;border:2px solid var(--line);background:#fff;cursor:pointer;margin-top:2px;padding:0;}
+  .dot.on{background:var(--coral);border-color:var(--coral);}
+  .pgrp{margin-bottom:14px;}
+  .pgrp-hd{display:flex;align-items:center;gap:8px;font-family:'Montserrat',sans-serif;font-weight:700;font-size:13px;color:var(--navy);background:#eef4f6;border:1px solid #d6e6ea;border-radius:10px;padding:9px 12px;margin-bottom:8px;}
+  .pgrp-c{margin-left:auto;font-family:'Inter',sans-serif;font-weight:600;font-size:11px;color:var(--muted);}
+  #scDotTab{position:fixed;right:14px;bottom:24px;background:var(--coral);color:#fff;font-weight:700;font-size:14px;padding:12px 16px;border-radius:999px;cursor:pointer;z-index:35;box-shadow:0 3px 12px rgba(0,0,0,.28);align-items:center;gap:6px;border:none;}
+  #scDotDrawer{position:fixed;top:0;right:0;width:310px;max-width:88vw;height:100vh;background:#fff;border-left:1px solid var(--line);box-shadow:-4px 0 22px rgba(0,0,0,.22);z-index:41;display:flex;flex-direction:column;transform:translateX(105%);transition:transform .22s;}
+  #scDotDrawer.open{transform:translateX(0);}
+  .dd-head{display:flex;align-items:center;gap:8px;font-family:'Montserrat',sans-serif;font-weight:800;font-size:15px;color:var(--navy);padding:14px;border-bottom:1px solid var(--line);}
+  .dd-head .btn-x{margin-left:auto;}
+  #scDotList{flex:1;overflow-y:auto;padding:8px 14px;}
+  .dd-item{display:flex;align-items:center;gap:8px;border-top:1px solid #eef1f4;padding:8px 0;}
+  .dd-item:first-child{border-top:none;}
+  .dd-foot{display:flex;gap:8px;padding:12px 14px;border-top:1px solid var(--line);}
   .focus-note{display:flex;align-items:center;gap:10px;background:#eef4f6;border:1px solid #d6e6ea;border-radius:10px;padding:8px 12px;margin-bottom:10px;font-size:13px;color:var(--navy);}
   .focus-note button{margin-left:auto;}
   .pal-wrs .w.hl{background:#e6f7ee;border-radius:6px;margin:0 -6px;padding-left:6px;padding-right:6px;}
@@ -460,7 +474,11 @@
             <div class="scfld" style="margin:0;"><label>BL #</label><input type="text" id="scPickBL" autocomplete="off" placeholder="Bill of Lading #"></div>
             <div class="scfld" style="margin:0;"><label>Container #</label><input type="text" id="scPickCont" autocomplete="off" placeholder="Container (optional)"></div>
           </div>
-          <div class="pickctl" style="margin-top:12px;"><input type="text" id="scPickSearch" autocomplete="off" placeholder="Scan a WR (Enter) or search…"><select id="scPickSort"><option value="loc">Walk route (location)</option><option value="wr">WR # ↑ (low to high)</option><option value="wrdesc">WR # ↓ (high to low)</option><option value="pallet">Pallet #</option><option value="list">List order</option></select></div>
+          <div class="pickctl" style="margin-top:12px;"><input type="text" id="scPickSearch" autocomplete="off" placeholder="Scan/type WR, or a pallet # (e.g. 3)"><select id="scPickSort"><option value="loc">Walk route (location)</option><option value="wr">WR # ↑ (low to high)</option><option value="wrdesc">WR # ↓ (high to low)</option><option value="pallet">Pallet #</option><option value="list">List order</option></select></div>
+          <div style="display:flex;align-items:center;gap:12px;margin-top:8px;flex-wrap:wrap;">
+            <div class="seg" style="flex:0 0 auto;"><button type="button" id="scViewList" class="on" onclick="scSetPickView('list')">List</button><button type="button" id="scViewPallet" onclick="scSetPickView('pallet')">By pallet</button></div>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--text);cursor:pointer;"><input type="checkbox" id="scPickPltOnly" style="width:auto;flex:0 0 auto;" onchange="scRenderPick()"> Pallets only</label>
+          </div>
           <button class="btn ghost mini" id="scAddWrBtn" style="margin-top:4px;">＋ Add WR (last-minute)</button>
           <div id="scAddWrForm" class="hidden" style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px;">
             <div class="row">
@@ -494,6 +512,13 @@
 </div><!-- /layout -->
 
 <datalist id="scLocList"></datalist>
+
+<button id="scDotTab" style="display:none;" onclick="scToggleDrawer()">🏷 <span id="scDotCount">0</span></button>
+<div id="scDotDrawer">
+  <div class="dd-head">Label organizer (<span id="scDotCount2">0</span>) <button class="btn-x" onclick="scToggleDrawer(false)">×</button></div>
+  <div id="scDotList"></div>
+  <div class="dd-foot"><button class="btn ghost mini" style="flex:1;" onclick="scExportDots()">⬇ Export list</button><button class="btn ghost mini" style="flex:1;" onclick="scClearDots()">Clear all</button></div>
+</div>
 
 <!-- POST BAR -->
 <div class="postbar hidden" id="postBar">
@@ -1211,6 +1236,7 @@ function showPage(name){
   if(pb){ if(name==="picking" && state.listId){ pb.classList.remove("hidden"); } else { pb.classList.add("hidden"); } }
   if(name.indexOf("sc-")===0) setNavGroup(false); // auto-expand SC group when a SC page opens
   try{ sessionStorage.setItem("wrpick_page", name); }catch(e){}
+  if(typeof scUpdateDotUI==="function") scUpdateDotUI();
   closeSidebar();
   window.scrollTo(0,0);
 }
@@ -1576,7 +1602,7 @@ function scClearMovements(){ if(!scDB) return; if(confirm("Permanently delete AL
 
 /* ---------- Sports Center picker ---------- */
 const SC_LOC_ORDER = (function(){ const o={}; SC_LOCATIONS.forEach((l,i)=>o[l]=i); return o; })();
-let scPickListId=null, scPickItems=[], scPickState={}, scPickLists={}, scPickUnsub=null, scPickCelebrated=false, scPickOpenedAt=0;
+let scPickListId=null, scPickItems=[], scPickState={}, scPickLists={}, scPickUnsub=null, scPickCelebrated=false, scPickOpenedAt=0, scPickView="list", scDots={};
 let scHighlight={}, scArLists={}, scPendingPallet=null, scFocusNo=null, scPalSel={};
 function scWrKey(wr){ return String(wr||"").trim().toLowerCase().replace(/[.#$/\[\]]/g,"_")||"_"; }
 
@@ -1584,23 +1610,49 @@ function scPickerName(){ try{ return localStorage.getItem("sc_picker")||""; }cat
 function qtyText(it){ if(it.expectedQty==null || it.expectedQty==="") return ""; if(it.manual){ const n=Number(it.expectedQty)||0; return n+" "+(it.munit==="plt"?"plt":"ctn")+(n===1?"":"s"); } return "Qty: "+it.expectedQty; }
 function scResolveLoc(wr){
   const w=String(wr||"").trim().toLowerCase();
-  if(!w) return { found:false, palletStr:"", locStr:"", sortKey:9999 };
+  if(!w) return { found:false, palletStr:"", locStr:"", sortKey:9999, palNo:null, nos:[], hasPlt:false };
   const matches=Object.keys(scContents).map(k=>scContents[k]).filter(c=>String(c.wr||"").trim().toLowerCase()===w);
-  if(!matches.length) return { found:false, palletStr:"", locStr:"", sortKey:9999, palNo:null };
+  if(!matches.length) return { found:false, palletStr:"", locStr:"", sortKey:9999, palNo:null, nos:[], hasPlt:false };
   const pallets=[], locs=[];
   matches.forEach(c=>{ const p=palletById(c.palletId); if(p){ if(pallets.indexOf(p.no)<0) pallets.push(p.no); if(p.location && locs.indexOf(p.location)<0) locs.push(p.location); } });
   pallets.sort((a,b)=>a-b);
   locs.sort((a,b)=>((SC_LOC_ORDER[a]==null?9998:SC_LOC_ORDER[a])-(SC_LOC_ORDER[b]==null?9998:SC_LOC_ORDER[b])));
   const sortKey=locs.length ? (SC_LOC_ORDER[locs[0]]==null?9998:SC_LOC_ORDER[locs[0]]) : 9997;
-  return { found:true, palletStr:pallets.map(n=>"#"+n).join(", "), locStr:locs.join(", "), sortKey:sortKey, palNo:(pallets.length?pallets[0]:null) };
+  const hasPlt=matches.some(c=>c.unit==="plt");
+  return { found:true, palletStr:pallets.map(n=>"#"+n).join(", "), locStr:locs.join(", "), sortKey:sortKey, palNo:(pallets.length?pallets[0]:null), nos:pallets, hasPlt:hasPlt };
+}
+function scPalletNoLoc(n){ const id=Object.keys(scPallets).find(k=>Number(scPallets[k].no)===Number(n)); return id?(scPallets[id].location||""):""; }
+function scPickLineHtml(it){
+  const st=scPickState[it.sid]||{}, picked=!!st.picked, loc=it._loc;
+  const other = picked && st.byId && st.byId!==state.deviceId;
+  const dotted=!!scDots[it.sid];
+  return '<div class="pick'+(picked?' done':'')+(it.flag==="must"?' must':it.flag==="if"?' iff':'')+'" id="scrow_'+it.sid+'">'
+    +'<div class="top">'
+    +'<div class="check'+(other?' lock':'')+'" onclick="scTogglePick(\''+it.sid+'\')">'+(picked?'✓':'')+'</div>'
+    +'<div class="meta">'
+    +(it.flag?('<div style="margin-bottom:3px;"><span class="tag '+(it.flag==='must'?'must':'iff')+'">'+(it.flag==='must'?'MUST GO':'IF')+'</span></div>'):'')
+    +'<div class="wrbig">'+escapeHtml(it.wr||"(no WR)")+'</div>'
+    +(it.description?'<div class="desc">'+escapeHtml(it.description)+'</div>':'')
+    +'<div class="sub">'
+      +(it.manual?'<span class="tag" style="background:var(--coral);color:#fff;">added</span>':'')
+      +(loc.palletStr?('<span class="tag pal">Pallet '+escapeHtml(loc.palletStr)+'</span>'):'')
+      +(loc.locStr?('<span class="tag loc">'+escapeHtml(loc.locStr)+'</span>'):'')
+      +(qtyText(it)?(' '+escapeHtml(qtyText(it))):'')
+    +'</div>'
+    +(!loc.found?'<div class="flag">⚠ Not found in Sports Center inventory</div>':((!loc.locStr && !loc.manual)?'<div class="flag">Pallet has no location set</div>':(loc.manual && !loc.locStr?'<div class="flag">No location entered</div>':'')))
+    +(other?('<div class="claimlbl">🔒 Picked by '+escapeHtml(st.by||"another picker")+'</div>'):(picked?('<div class="claimlbl mine">✓ Picked'+(st.by?(' by '+escapeHtml(st.by)):'')+'</div>'):''))
+    +'</div>'
+    +'<button class="dot'+(dotted?' on':'')+'" title="Add to Label organizer" onclick="scToggleDot(\''+it.sid+'\')"></button>'
+    +'</div></div>';
 }
 function scRenderPick(){
   const box=$("scPickList"); if(!box) return;
-  const q=($("scPickSearch")&&$("scPickSearch").value.trim().toLowerCase())||"";
+  const q=($("scPickSearch")&&$("scPickSearch").value.trim())||"";
   const mode=($("scPickSort")&&$("scPickSort").value)||"loc";
+  const pltOnly=$("scPickPltOnly")&&$("scPickPltOnly").checked;
   let rows=scPickItems.map((it,i)=>{
     let loc=scResolveLoc(it.wr);
-    if(!loc.found && it.manual){ loc={ found:true, manual:true, palletStr:"", locStr:(it.mloc||""), sortKey:((it.mloc&&SC_LOC_ORDER[it.mloc]!=null)?SC_LOC_ORDER[it.mloc]:9996), palNo:null }; }
+    if(!loc.found && it.manual){ loc={ found:true, manual:true, palletStr:"", locStr:(it.mloc||""), sortKey:((it.mloc&&SC_LOC_ORDER[it.mloc]!=null)?SC_LOC_ORDER[it.mloc]:9996), palNo:null, nos:[], hasPlt:(it.munit==="plt") }; }
     return Object.assign({}, it, {_loc:loc, _i:i});
   });
   const byWr=(a,b)=>String(a.wr).localeCompare(String(b.wr),undefined,{numeric:true});
@@ -1609,28 +1661,33 @@ function scRenderPick(){
   else if(mode==="list") rows.sort((a,b)=>a._i-b._i);
   else if(mode==="pallet") rows.sort((a,b)=>((a._loc.palNo||99999)-(b._loc.palNo||99999)) || byWr(a,b));
   else rows.sort((a,b)=>(a._loc.sortKey-b._loc.sortKey) || byWr(a,b));
-  if(q) rows=rows.filter(r=>((r.wr||"")+" "+(r.description||"")+" "+r._loc.locStr+" "+r._loc.palletStr).toLowerCase().indexOf(q)>=0);
-  if(!rows.length){ box.innerHTML='<div class="empty-note">'+(scPickItems.length?"No matching lines.":"No lines in this list.")+'</div>'; return; }
-  box.innerHTML=rows.map(it=>{
-    const st=scPickState[it.sid]||{}, picked=!!st.picked, loc=it._loc;
-    const other = picked && st.byId && st.byId!==state.deviceId;
-    return '<div class="pick'+(picked?' done':'')+(it.flag==="must"?' must':it.flag==="if"?' iff':'')+'" id="scrow_'+it.sid+'">'
-      +'<div class="top">'
-      +'<div class="check'+(other?' lock':'')+'" onclick="scTogglePick(\''+it.sid+'\')">'+(picked?'✓':'')+'</div>'
-      +'<div class="meta">'
-      +(it.flag?('<div style="margin-bottom:3px;"><span class="tag '+(it.flag==='must'?'must':'iff')+'">'+(it.flag==='must'?'MUST GO':'IF')+'</span></div>'):'')
-      +'<div class="wrbig">'+escapeHtml(it.wr||"(no WR)")+'</div>'
-      +(it.description?'<div class="desc">'+escapeHtml(it.description)+'</div>':'')
-      +'<div class="sub">'
-        +(it.manual?'<span class="tag" style="background:var(--coral);color:#fff;">added</span>':'')
-        +(loc.palletStr?('<span class="tag pal">Pallet '+escapeHtml(loc.palletStr)+'</span>'):'')
-        +(loc.locStr?('<span class="tag loc">'+escapeHtml(loc.locStr)+'</span>'):'')
-        +(qtyText(it)?(' '+escapeHtml(qtyText(it))):'')
-      +'</div>'
-      +(!loc.found?'<div class="flag">⚠ Not found in Sports Center inventory</div>':((!loc.locStr && !loc.manual)?'<div class="flag">Pallet has no location set</div>':(loc.manual && !loc.locStr?'<div class="flag">No location entered</div>':'')))
-      +(other?('<div class="claimlbl">🔒 Picked by '+escapeHtml(st.by||"another picker")+'</div>'):(picked?('<div class="claimlbl mine">✓ Picked'+(st.by?(' by '+escapeHtml(st.by)):'')+'</div>'):''))
-      +'</div></div></div>';
-  }).join("");
+  if(pltOnly) rows=rows.filter(r=>r._loc.hasPlt);
+  if(q){
+    const dq=q.replace(/[#,\s]/g,"");
+    if(dq && /^\d+$/.test(dq)){ const n=Number(dq); rows=rows.filter(r=>(r._loc.nos||[]).indexOf(n)>=0); }
+    else { const ql=q.toLowerCase(); rows=rows.filter(r=>((r.wr||"")+" "+(r.description||"")+" "+r._loc.locStr).toLowerCase().indexOf(ql)>=0); }
+  }
+  if(!rows.length){ box.innerHTML='<div class="empty-note">'+(scPickItems.length?"No matching lines.":"No lines in this list.")+'</div>'; scUpdateDotUI(); return; }
+  if(scPickView==="pallet"){
+    const groups={};
+    rows.forEach(it=>{ const nos=it._loc.nos||[]; let key; if(nos.length) key=nos[0]; else if(it.manual) key="_added"; else key="_none"; if(!groups[key]) groups[key]={ key:key, no:(typeof key==="number"?key:null), items:[] }; groups[key].items.push(it); });
+    const keys=Object.keys(groups).sort((a,b)=>{
+      const ga=groups[a], gb=groups[b];
+      const oa=(ga.no!=null)?((SC_LOC_ORDER[scPalletNoLoc(ga.no)]!=null?SC_LOC_ORDER[scPalletNoLoc(ga.no)]:9990)):(a==="_added"?99998:99999);
+      const ob=(gb.no!=null)?((SC_LOC_ORDER[scPalletNoLoc(gb.no)]!=null?SC_LOC_ORDER[scPalletNoLoc(gb.no)]:9990)):(b==="_added"?99998:99999);
+      return oa-ob || ((ga.no||0)-(gb.no||0));
+    });
+    box.innerHTML=keys.map(k=>{
+      const g=groups[k];
+      const title=(g.no!=null)?("Pallet #"+g.no+(scPalletNoLoc(g.no)?(" · "+escapeHtml(scPalletNoLoc(g.no))):"")):(k==="_added"?"Added — no pallet":"Not in inventory");
+      const doneN=g.items.filter(it=>scPickState[it.sid]&&scPickState[it.sid].picked).length;
+      const sids=g.items.map(it=>it.sid).join(",");
+      return '<div class="pgrp"><div class="pgrp-hd"><span>'+title+'</span><span class="pgrp-c">'+doneN+'/'+g.items.length+' picked</span><button class="btn ghost mini" style="padding:4px 8px!important;" onclick="scDotGroup(\''+sids+'\')">Dot all</button></div>'+g.items.map(scPickLineHtml).join("")+'</div>';
+    }).join("");
+  } else {
+    box.innerHTML=rows.map(scPickLineHtml).join("");
+  }
+  scUpdateDotUI();
 }
 function scPickProgress(){
   const total=scPickItems.length, done=scPickItems.filter(it=>scPickState[it.sid]&&scPickState[it.sid].picked).length;
@@ -1639,6 +1696,42 @@ function scPickProgress(){
   if(num) num.textContent=done+" / "+total;
   if(total>0 && done===total){ if(!scPickCelebrated && (Date.now()-(scPickOpenedAt||0)>1200)){ confettiBurst(); toast("All picked! 🎉"); } scPickCelebrated=true; }
   else { scPickCelebrated=false; }
+}
+/* ---------- view toggle + label-organizer dots ---------- */
+function scSetPickView(v){ scPickView=(v==="pallet")?"pallet":"list"; try{localStorage.setItem("sc_pickview",scPickView);}catch(e){} if($("scViewList")) $("scViewList").classList.toggle("on",scPickView==="list"); if($("scViewPallet")) $("scViewPallet").classList.toggle("on",scPickView==="pallet"); scRenderPick(); }
+function scSaveDots(){ if(!scPickListId) return; try{ localStorage.setItem("sc_dots_"+scPickListId, JSON.stringify(Object.keys(scDots).filter(k=>scDots[k]))); }catch(e){} }
+function scLoadDots(id){ scDots={}; try{ (JSON.parse(localStorage.getItem("sc_dots_"+id)||"[]")||[]).forEach(s=>scDots[s]=true); }catch(e){} }
+function scToggleDot(sid){ if(scDots[sid]) delete scDots[sid]; else scDots[sid]=true; scSaveDots(); scRenderPick(); scRenderDots(); scUpdateDotUI(); }
+function scDotGroup(sids){ String(sids||"").split(",").forEach(s=>{ if(s) scDots[s]=true; }); scSaveDots(); scRenderPick(); scRenderDots(); scUpdateDotUI(); }
+function scUpdateDotUI(){
+  const tab=$("scDotTab"); if(!tab) return;
+  const pg=document.getElementById("page-sc-picker");
+  const onPicker=!!(pg && !pg.classList.contains("hidden") && scPickListId);
+  const n=Object.keys(scDots).filter(k=>scDots[k]).length;
+  tab.style.display = onPicker ? "flex" : "none";
+  if($("scDotCount")) $("scDotCount").textContent=n;
+  if($("scDotCount2")) $("scDotCount2").textContent=n;
+  if(!onPicker){ const d=$("scDotDrawer"); if(d) d.classList.remove("open"); }
+}
+function scToggleDrawer(show){ const d=$("scDotDrawer"); if(!d) return; const open=(show===undefined)?!d.classList.contains("open"):!!show; d.classList.toggle("open",open); if(open) scRenderDots(); }
+function scRenderDots(){
+  const box=$("scDotList"); if(!box) return;
+  const ids=Object.keys(scDots).filter(k=>scDots[k]);
+  if(!ids.length){ box.innerHTML='<div class="empty-note">No labels staged yet. Tap the dot on a WR to add it here.</div>'; return; }
+  box.innerHTML=ids.map(sid=>{
+    const it=scPickItems.find(x=>String(x.sid)===String(sid)); if(!it) return "";
+    const loc=scResolveLoc(it.wr);
+    const where=loc.found?(loc.palletStr+(loc.locStr?(" · "+loc.locStr):"")):(it.manual?(it.mloc||"added"):"—");
+    return '<div class="dd-item"><div style="min-width:0;"><div class="ar-wr">'+escapeHtml(it.wr||"")+'</div><div class="ar-sub">'+escapeHtml(where)+'</div></div><button class="btn-x" title="Remove" onclick="scToggleDot(\''+sid+'\')">×</button></div>';
+  }).join("");
+}
+function scClearDots(){ if(!Object.keys(scDots).filter(k=>scDots[k]).length) return; if(!confirm("Clear all staged labels?")) return; scDots={}; scSaveDots(); scRenderPick(); scRenderDots(); scUpdateDotUI(); }
+function scExportDots(){
+  const ids=Object.keys(scDots).filter(k=>scDots[k]); if(!ids.length){ toast("No labels staged"); return; }
+  const body=[];
+  ids.forEach(sid=>{ const it=scPickItems.find(x=>String(x.sid)===String(sid)); if(!it) return; const loc=scResolveLoc(it.wr); const where=loc.found?(loc.palletStr+(loc.locStr?(" · "+loc.locStr):"")):(it.manual?(it.mloc||""):""); body.push([String(body.length+1), it.wr||"", where]); });
+  const name=($("scPickRef")&&$("scPickRef").value.trim())||($("scPickName")&&$("scPickName").textContent)||"labels";
+  pdfReport("labels-"+safeName(name)+".pdf", "Label list — "+name, ["The Sports Center","Staged "+body.length+" WR(s)","Generated "+new Date().toLocaleString()], ["#","WR","Pallet / location"], body);
 }
 function scTogglePick(sid){
   const it=scPickItems.find(x=>String(x.sid)===String(sid)); if(!it) return;
@@ -1696,6 +1789,9 @@ function scOpenPickList(listId, obj){
   if($("scPickCont")) $("scPickCont").value=(obj&&obj.container)||"";
   if($("scPickSearch")) $("scPickSearch").value="";
   scPickCelebrated=false; scPickOpenedAt=Date.now();
+  scLoadDots(scPickListId);
+  if($("scViewList")) $("scViewList").classList.toggle("on",scPickView==="list");
+  if($("scViewPallet")) $("scViewPallet").classList.toggle("on",scPickView==="pallet");
   $("scPickChooser").classList.add("hidden");
   $("scPickOpen").classList.remove("hidden");
   positionProgress();
@@ -1708,10 +1804,11 @@ function scOpenPickList(listId, obj){
 }
 function scClosePickList(){
   if(scPickUnsub){ try{scPickUnsub();}catch(e){} scPickUnsub=null; }
-  scPickListId=null; scPickItems=[]; scPickState={};
+  scPickListId=null; scPickItems=[]; scPickState={}; scDots={};
   $("scPickOpen").classList.add("hidden");
   $("scPickChooser").classList.remove("hidden");
   scToggleAddWr(false);
+  scToggleDrawer(false); scUpdateDotUI();
 }
 function scToggleAddWr(show){
   const f=$("scAddWrForm"); if(!f) return;
@@ -1842,6 +1939,7 @@ function scPickWire(){
 
 function scInit(){
   fillLocationDatalist();
+  try{ const pv=localStorage.getItem("sc_pickview"); if(pv==="pallet"||pv==="list") scPickView=pv; }catch(e){}
   if($("scBy")) $("scBy").value=scByName();
   const rb=$("scReceiveBtn"); if(rb) rb.addEventListener("click", scReceive);
   const ps=$("scPalletSel"); if(ps) ps.addEventListener("change", toggleReceiveLoc);
