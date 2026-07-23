@@ -478,6 +478,7 @@
           <div style="display:flex;align-items:center;gap:12px;margin-top:8px;flex-wrap:wrap;">
             <div class="seg" style="flex:0 0 auto;"><button type="button" id="scViewList" class="on" onclick="scSetPickView('list')">List</button><button type="button" id="scViewPallet" onclick="scSetPickView('pallet')">By pallet</button></div>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--text);cursor:pointer;"><input type="checkbox" id="scPickPltOnly" style="width:auto;flex:0 0 auto;" onchange="scRenderPick()"> Pallets only</label>
+            <button class="btn ghost mini" id="scPickEditBtn" style="margin-left:auto;" onclick="scTogglePickEdit()">Edit list</button>
           </div>
           <button class="btn ghost mini" id="scAddWrBtn" style="margin-top:4px;">＋ Add WR (last-minute)</button>
           <div id="scAddWrForm" class="hidden" style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px;">
@@ -1602,7 +1603,7 @@ function scClearMovements(){ if(!scDB) return; if(confirm("Permanently delete AL
 
 /* ---------- Sports Center picker ---------- */
 const SC_LOC_ORDER = (function(){ const o={}; SC_LOCATIONS.forEach((l,i)=>o[l]=i); return o; })();
-let scPickListId=null, scPickItems=[], scPickState={}, scPickLists={}, scPickUnsub=null, scPickCelebrated=false, scPickOpenedAt=0, scPickView="list", scDots={};
+let scPickListId=null, scPickItems=[], scPickState={}, scPickLists={}, scPickUnsub=null, scPickCelebrated=false, scPickOpenedAt=0, scPickView="list", scDots={}, scPickEdit=false;
 let scHighlight={}, scArLists={}, scPendingPallet=null, scFocusNo=null, scPalSel={};
 function scWrKey(wr){ return String(wr||"").trim().toLowerCase().replace(/[.#$/\[\]]/g,"_")||"_"; }
 
@@ -1642,7 +1643,7 @@ function scPickLineHtml(it){
     +(!loc.found?'<div class="flag">⚠ Not found in Sports Center inventory</div>':((!loc.locStr && !loc.manual)?'<div class="flag">Pallet has no location set</div>':(loc.manual && !loc.locStr?'<div class="flag">No location entered</div>':'')))
     +(other?('<div class="claimlbl">🔒 Picked by '+escapeHtml(st.by||"another picker")+'</div>'):(picked?('<div class="claimlbl mine">✓ Picked'+(st.by?(' by '+escapeHtml(st.by)):'')+'</div>'):''))
     +'</div>'
-    +'<button class="dot'+(dotted?' on':'')+'" title="Add to Label organizer" onclick="scToggleDot(\''+it.sid+'\')"></button>'
+    +(scPickEdit?('<button class="iconbtn danger" title="Remove from list" onclick="scRemovePickItem(\''+it.sid+'\')">✕</button>'):('<button class="dot'+(dotted?' on':'')+'" title="Add to Label organizer" onclick="scToggleDot(\''+it.sid+'\')"></button>'))
     +'</div></div>';
 }
 function scRenderPick(){
@@ -1790,6 +1791,7 @@ function scOpenPickList(listId, obj){
   if($("scPickSearch")) $("scPickSearch").value="";
   scPickCelebrated=false; scPickOpenedAt=Date.now();
   scLoadDots(scPickListId);
+  scPickEdit=false; if($("scPickEditBtn")){ $("scPickEditBtn").textContent="Edit list"; $("scPickEditBtn").classList.add("ghost"); $("scPickEditBtn").classList.remove("navy"); }
   if($("scViewList")) $("scViewList").classList.toggle("on",scPickView==="list");
   if($("scViewPallet")) $("scViewPallet").classList.toggle("on",scPickView==="pallet");
   $("scPickChooser").classList.add("hidden");
@@ -1825,13 +1827,30 @@ function scAddManualWR(){
   const loc=($("mwLoc")&&$("mwLoc").value.trim())||"";
   const sid=scPickItems.reduce((m,it)=>Math.max(m,Number(it.sid)||0),-1)+1;
   scPickItems.push({ sid:sid, wr:wr, description:"", expectedQty:qty, manual:true, munit:unit, mloc:loc });
-  if(scDB && scPickListId){
-    const payload=scPickItems.map(it=>{ const o={ sid:it.sid, wr:it.wr||"", description:it.description||"", expectedQty:(it.expectedQty!=null?it.expectedQty:"") }; if(it.flag) o.flag=it.flag; if(it.manual){ o.manual=true; o.munit=it.munit||"ctn"; o.mloc=it.mloc||""; } return o; });
-    scDB.ref(SC+"/picklists/"+scPickListId+"/items").set(payload);
-  }
+  scPersistPickItems();
   scRenderPick(); scPickProgress();
   banner("mwBanner","✓ Added WR "+wr+" to the pick list.","ok");
   if($("mwWr")) $("mwWr").value=""; if($("mwQty")) $("mwQty").value=""; if($("mwLoc")) $("mwLoc").value=""; if($("mwWr")) $("mwWr").focus();
+}
+function scPersistPickItems(){
+  if(!scDB || !scPickListId) return;
+  const payload=scPickItems.map(it=>{ const o={ sid:it.sid, wr:it.wr||"", description:it.description||"", expectedQty:(it.expectedQty!=null?it.expectedQty:"") }; if(it.flag) o.flag=it.flag; if(it.manual){ o.manual=true; o.munit=it.munit||"ctn"; o.mloc=it.mloc||""; } return o; });
+  scDB.ref(SC+"/picklists/"+scPickListId+"/items").set(payload);
+}
+function scRemovePickItem(sid){
+  const it=scPickItems.find(x=>String(x.sid)===String(sid)); if(!it) return;
+  if(!confirm("Remove WR "+(it.wr||"")+" from this pick list?\n\nIt stays in inventory — use this when it didn't make the container.")) return;
+  scPickItems=scPickItems.filter(x=>String(x.sid)!==String(sid));
+  if(scDots[sid]){ delete scDots[sid]; scSaveDots(); }
+  if(scDB && scPickListId) scDB.ref(SC+"/pickstate/"+scPickListId+"/"+sid).remove();
+  scPersistPickItems();
+  scRenderPick(); scPickProgress(); scRenderDots(); scUpdateDotUI();
+  toast("Removed WR "+(it.wr||"")+" from list");
+}
+function scTogglePickEdit(){
+  scPickEdit=!scPickEdit;
+  const b=$("scPickEditBtn"); if(b){ b.textContent = scPickEdit ? "Done editing" : "Edit list"; b.classList.toggle("navy", scPickEdit); b.classList.toggle("ghost", !scPickEdit); }
+  scRenderPick();
 }
 function scSubscribePickLists(){
   if(!scDB) return;
