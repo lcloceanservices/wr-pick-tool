@@ -474,7 +474,7 @@
             <div class="scfld" style="margin:0;"><label>BL #</label><input type="text" id="scPickBL" autocomplete="off" placeholder="Bill of Lading #"></div>
             <div class="scfld" style="margin:0;"><label>Container #</label><input type="text" id="scPickCont" autocomplete="off" placeholder="Container (optional)"></div>
           </div>
-          <div class="pickctl" style="margin-top:12px;"><input type="text" id="scPickSearch" autocomplete="off" placeholder="Scan/type WR, or a pallet # (e.g. 3)"><select id="scPickSort"><option value="loc">Walk route (location)</option><option value="wr">WR # ↑ (low to high)</option><option value="wrdesc">WR # ↓ (high to low)</option><option value="pallet">Pallet #</option><option value="list">List order</option></select></div>
+          <div class="pickctl" style="margin-top:12px;"><input type="text" id="scPickSearch" autocomplete="off" placeholder="Scan/type WR or location · use #3 for a pallet"><select id="scPickSort"><option value="loc">Walk route (location)</option><option value="wr">WR # ↑ (low to high)</option><option value="wrdesc">WR # ↓ (high to low)</option><option value="pallet">Pallet #</option><option value="list">List order</option></select></div>
           <div style="display:flex;align-items:center;gap:12px;margin-top:8px;flex-wrap:wrap;">
             <div class="seg" style="flex:0 0 auto;"><button type="button" id="scViewList" class="on" onclick="scSetPickView('list')">List</button><button type="button" id="scViewPallet" onclick="scSetPickView('pallet')">By pallet</button></div>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--text);cursor:pointer;"><input type="checkbox" id="scPickPltOnly" style="width:auto;flex:0 0 auto;" onchange="scRenderPick()"> Pallets only</label>
@@ -1664,8 +1664,8 @@ function scRenderPick(){
   else rows.sort((a,b)=>(a._loc.sortKey-b._loc.sortKey) || byWr(a,b));
   if(pltOnly) rows=rows.filter(r=>r._loc.hasPlt);
   if(q){
-    const dq=q.replace(/[#,\s]/g,"");
-    if(dq && /^\d+$/.test(dq)){ const n=Number(dq); rows=rows.filter(r=>(r._loc.nos||[]).indexOf(n)>=0); }
+    const palM=q.match(/^#\s*(\d+)\s*$/) || q.match(/^p\s*(\d+)\s*$/i);
+    if(palM){ const n=Number(palM[1]); rows=rows.filter(r=>(r._loc.nos||[]).indexOf(n)>=0); }
     else { const ql=q.toLowerCase(); rows=rows.filter(r=>((r.wr||"")+" "+(r.description||"")+" "+r._loc.locStr).toLowerCase().indexOf(ql)>=0); }
   }
   if(!rows.length){ box.innerHTML='<div class="empty-note">'+(scPickItems.length?"No matching lines.":"No lines in this list.")+'</div>'; scUpdateDotUI(); return; }
