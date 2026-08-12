@@ -142,12 +142,13 @@ function rowsToItems(rows) {
 
     const cleanQty = parseInt(String(expectedQty).replace(/[^0-9]/g, ""), 10);
 
-    // Detect a "MUST GO" / "IF" priority flag from any whole cell on the row
-    // (exact cell match so we don't false-positive on words like "gift").
+    // Detect a "MUST GO" / "IF" priority flag from any whole cell on the row.
+    // MUST: any cell containing "MUST" anywhere (e.g. "MUST", "MUSTXXX") counts.
+    // IF: still an exact match so we don't false-positive on unrelated text.
     let flag = "";
     for (let ci = 0; ci < row.length; ci++) {
       const v = String(row[ci] == null ? "" : row[ci]).trim().toUpperCase();
-      if (v === "MUST" || v === "MUST GO" || v === "MUSTGO" || v === "MUST-GO") { flag = "must"; break; }
+      if (v.indexOf("MUST") !== -1) { flag = "must"; break; }
       if ((v === "IF" || v === "IFS" || v === "IF ROOM" || v === "IF SPACE" || v === "IF POSSIBLE") && !flag) { flag = "if"; }
     }
 
