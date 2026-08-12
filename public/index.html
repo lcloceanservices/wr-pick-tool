@@ -478,6 +478,7 @@
           <div style="display:flex;align-items:center;gap:12px;margin-top:8px;flex-wrap:wrap;">
             <div class="seg" style="flex:0 0 auto;"><button type="button" id="scViewList" class="on" onclick="scSetPickView('list')">List</button><button type="button" id="scViewPallet" onclick="scSetPickView('pallet')">By pallet</button></div>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--text);cursor:pointer;"><input type="checkbox" id="scPickPltOnly" style="width:auto;flex:0 0 auto;" onchange="scRenderPick()"> Pallets only</label>
+            <select id="scPickFlag" style="flex:0 0 auto;width:auto;" onchange="scRenderPick()"><option value="">All lines</option><option value="must">MUST only</option><option value="if">IF only</option><option value="none">No flag</option></select>
             <button class="btn ghost mini" id="scPickEditBtn" style="margin-left:auto;" onclick="scTogglePickEdit()">Edit list</button>
           </div>
           <button class="btn ghost mini" id="scAddWrBtn" style="margin-top:4px;">＋ Add WR (last-minute)</button>
@@ -1651,6 +1652,7 @@ function scRenderPick(){
   const q=($("scPickSearch")&&$("scPickSearch").value.trim())||"";
   const mode=($("scPickSort")&&$("scPickSort").value)||"loc";
   const pltOnly=$("scPickPltOnly")&&$("scPickPltOnly").checked;
+  const flagFilter=($("scPickFlag")&&$("scPickFlag").value)||"";
   let rows=scPickItems.map((it,i)=>{
     let loc=scResolveLoc(it.wr);
     if(!loc.found && it.manual){ loc={ found:true, manual:true, palletStr:"", locStr:(it.mloc||""), sortKey:((it.mloc&&SC_LOC_ORDER[it.mloc]!=null)?SC_LOC_ORDER[it.mloc]:9996), palNo:null, nos:[], hasPlt:(it.munit==="plt") }; }
@@ -1663,6 +1665,10 @@ function scRenderPick(){
   else if(mode==="pallet") rows.sort((a,b)=>((a._loc.palNo||99999)-(b._loc.palNo||99999)) || byWr(a,b));
   else rows.sort((a,b)=>(a._loc.sortKey-b._loc.sortKey) || byWr(a,b));
   if(pltOnly) rows=rows.filter(r=>r._loc.hasPlt);
+  if(flagFilter){
+    if(flagFilter==="none") rows=rows.filter(r=>!r.flag);
+    else rows=rows.filter(r=>r.flag===flagFilter);
+  }
   if(q){
     const palM=q.match(/^#\s*(\d+)\s*$/) || q.match(/^p\s*(\d+)\s*$/i);
     if(palM){ const n=Number(palM[1]); rows=rows.filter(r=>(r._loc.nos||[]).indexOf(n)>=0); }
