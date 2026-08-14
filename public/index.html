@@ -479,6 +479,7 @@
             <div class="seg" style="flex:0 0 auto;"><button type="button" id="scViewList" class="on" onclick="scSetPickView('list')">List</button><button type="button" id="scViewPallet" onclick="scSetPickView('pallet')">By pallet</button></div>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--text);cursor:pointer;"><input type="checkbox" id="scPickPltOnly" style="width:auto;flex:0 0 auto;" onchange="scRenderPick()"> Pallets only</label>
             <select id="scPickFlag" style="flex:0 0 auto;width:auto;" onchange="scRenderPick()"><option value="">All lines</option><option value="must">MUST only</option><option value="if">IF only</option><option value="none">No flag</option></select>
+            <select id="scPickStatus" style="flex:0 0 auto;width:auto;" onchange="scRenderPick()"><option value="">Picked + unpicked</option><option value="unpicked">Not picked yet</option><option value="picked">Picked</option></select>
             <button class="btn ghost mini" id="scPickEditBtn" style="margin-left:auto;" onclick="scTogglePickEdit()">Edit list</button>
           </div>
           <button class="btn ghost mini" id="scAddWrBtn" style="margin-top:4px;">＋ Add WR (last-minute)</button>
@@ -1653,6 +1654,7 @@ function scRenderPick(){
   const mode=($("scPickSort")&&$("scPickSort").value)||"loc";
   const pltOnly=$("scPickPltOnly")&&$("scPickPltOnly").checked;
   const flagFilter=($("scPickFlag")&&$("scPickFlag").value)||"";
+  const statusFilter=($("scPickStatus")&&$("scPickStatus").value)||"";
   let rows=scPickItems.map((it,i)=>{
     let loc=scResolveLoc(it.wr);
     if(!loc.found && it.manual){ loc={ found:true, manual:true, palletStr:"", locStr:(it.mloc||""), sortKey:((it.mloc&&SC_LOC_ORDER[it.mloc]!=null)?SC_LOC_ORDER[it.mloc]:9996), palNo:null, nos:[], hasPlt:(it.munit==="plt") }; }
@@ -1668,6 +1670,11 @@ function scRenderPick(){
   if(flagFilter){
     if(flagFilter==="none") rows=rows.filter(r=>!r.flag);
     else rows=rows.filter(r=>r.flag===flagFilter);
+  }
+  if(statusFilter){
+    const isPicked=r=>!!(scPickState[r.sid]&&scPickState[r.sid].picked);
+    if(statusFilter==="unpicked") rows=rows.filter(r=>!isPicked(r));
+    else if(statusFilter==="picked") rows=rows.filter(r=>isPicked(r));
   }
   if(q){
     const palM=q.match(/^#\s*(\d+)\s*$/) || q.match(/^p\s*(\d+)\s*$/i);
