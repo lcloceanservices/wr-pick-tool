@@ -6,7 +6,7 @@
 <title>Inventory Picker Checklist — LCL Ocean Services</title>
 <script>
   try{
-    var t = localStorage.getItem('wrpick_theme');
+    var t = localStorage.getItem('wrpick_theme') || localStorage.getItem('lcl_theme');
     if(t === 'dark') document.documentElement.setAttribute('data-theme','dark');
   }catch(e){}
 </script>
@@ -437,7 +437,7 @@ const firebaseConfig = {
   appId: "1:983235004483:web:849c4e1afaf7ac78ae6cf6"
 };
 let listDB = null;
-try { firebase.initializeApp(firebaseConfig); listDB = firebase.database(); } catch(e) { listDB = null; }
+try { if(!firebase.apps.length) firebase.initializeApp(firebaseConfig); listDB = firebase.database(); } catch(e) { listDB = null; }
 
 function listNameFrom(items, fallback){
   const cust=(items.find(it=>it.customer&&String(it.customer).trim())||{}).customer||"";
@@ -1124,4 +1124,38 @@ if(themeToggle){
 
 </script>
 </body>
+<script>
+/* THEME_SYNC: cross-page dark mode sync via Firebase Realtime Database */
+(function(){
+  try{
+    if(!firebase.apps.length){
+      firebase.initializeApp({
+        databaseURL: "https://sports-center-sorter-default-rtdb.firebaseio.com"
+      });
+    }
+    var themeRef = firebase.database().ref('theme/current');
+
+    var toggleBtn = document.getElementById('themeToggle');
+    if(toggleBtn){
+      toggleBtn.addEventListener('click', function(){
+        var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        themeRef.set(isDark ? 'dark' : 'light').catch(function(){});
+      });
+    }
+
+    themeRef.on('value', function(snap){
+      var val = snap.val();
+      if(!val) return;
+      var current = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+      if(val === current) return;
+      if(val === 'dark'){
+        document.documentElement.setAttribute('data-theme','dark');
+      } else {
+        document.documentElement.removeAttribute('data-theme');
+      }
+      try{ localStorage.setItem('lcl_theme', val); localStorage.setItem('wrpick_theme', val); }catch(e){}
+    });
+  }catch(e){ /* Firebase unreachable - localStorage-only fallback still works */ }
+})();
+</script>
 </html>
