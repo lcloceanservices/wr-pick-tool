@@ -1133,7 +1133,19 @@ if(themeToggle){
         databaseURL: "https://sports-center-sorter-default-rtdb.firebaseio.com"
       });
     }
-    var themeRef = firebase.database().ref('theme/current');
+    // A random ID persisted per-browser so this sync only ever affects THIS
+    // browser's own tabs/tools, never other users' browsers.
+    var browserId = (function(){
+      try{
+        var id = localStorage.getItem('lcl_browser_id');
+        if(!id){
+          id = 'b_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2);
+          localStorage.setItem('lcl_browser_id', id);
+        }
+        return id;
+      }catch(e){ return 'b_fallback'; }
+    })();
+    var themeRef = firebase.database().ref('theme/' + browserId);
 
     var toggleBtn = document.getElementById('themeToggle');
     if(toggleBtn){
